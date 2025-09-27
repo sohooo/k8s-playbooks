@@ -16,6 +16,16 @@
               - --ignore-daemonsets
               - --delete-empty-data
 
+        - name: Run Puppet agent
+          ansible.builtin.command:
+            argv:
+              - puppet
+              - agent
+              - --test
+          register: puppet_agent_result
+          changed_when: puppet_agent_result.rc == 2
+          failed_when: puppet_agent_result.rc not in [0, 2]
+
         - name: Apply system updates
           ansible.builtin.dnf:
             name: "*"
@@ -52,6 +62,16 @@
               - "{{ inventory_hostname }}"
               - --ignore-daemonsets
               - --delete-empty-data
+
+        - name: Run Puppet agent
+          ansible.builtin.command:
+            argv:
+              - puppet
+              - agent
+              - --test
+          register: puppet_agent_result
+          changed_when: puppet_agent_result.rc == 2
+          failed_when: puppet_agent_result.rc not in [0, 2]
 
         - name: Apply system updates
           ansible.builtin.dnf:
