@@ -4,73 +4,71 @@
   become: true
   serial: 1
   tasks:
-    - name: Drain node from cluster scheduling
-      ansible.builtin.command:
-        argv:
-          - kubectl
-          - drain
-          - "{{ inventory_hostname }}"
-          - --ignore-daemonsets
-          - --delete-empty-data
-      when: (hostvars[inventory_hostname].control_plane | default(false))
+    - name: Maintenance tasks for control plane nodes
+      when: controlplane | default(false) | bool
+      block:
+        - name: Drain node from cluster scheduling
+          ansible.builtin.command:
+            argv:
+              - kubectl
+              - drain
+              - "{{ inventory_hostname }}"
+              - --ignore-daemonsets
+              - --delete-empty-data
 
-    - name: Apply system updates
-      ansible.builtin.dnf:
-        name: "*"
-        state: latest
-      when: (hostvars[inventory_hostname].control_plane | default(false))
+        - name: Apply system updates
+          ansible.builtin.dnf:
+            name: "*"
+            state: latest
 
-    - name: Reboot node
-      ansible.builtin.reboot:
-        reboot_command: shutdown -r now
-        connect_timeout: 30
-        reboot_timeout: 600
-        pre_reboot_delay: 0
-        post_reboot_delay: 30
-      when: (hostvars[inventory_hostname].control_plane | default(false))
+        - name: Reboot node
+          ansible.builtin.reboot:
+            reboot_command: shutdown -r now
+            connect_timeout: 30
+            reboot_timeout: 600
+            pre_reboot_delay: 0
+            post_reboot_delay: 30
 
-    - name: Mark node schedulable again
-      ansible.builtin.command:
-        argv:
-          - kubectl
-          - uncordon
-          - "{{ inventory_hostname }}"
-      when: (hostvars[inventory_hostname].control_plane | default(false))
+        - name: Mark node schedulable again
+          ansible.builtin.command:
+            argv:
+              - kubectl
+              - uncordon
+              - "{{ inventory_hostname }}"
 
 - name: Maintenance on worker nodes
   hosts: all
   become: true
   serial: 1
   tasks:
-    - name: Drain node from cluster scheduling
-      ansible.builtin.command:
-        argv:
-          - kubectl
-          - drain
-          - "{{ inventory_hostname }}"
-          - --ignore-daemonsets
-          - --delete-empty-data
-      when: not (hostvars[inventory_hostname].control_plane | default(false))
+    - name: Maintenance tasks for worker nodes
+      when: not (controlplane | default(false) | bool)
+      block:
+        - name: Drain node from cluster scheduling
+          ansible.builtin.command:
+            argv:
+              - kubectl
+              - drain
+              - "{{ inventory_hostname }}"
+              - --ignore-daemonsets
+              - --delete-empty-data
 
-    - name: Apply system updates
-      ansible.builtin.dnf:
-        name: "*"
-        state: latest
-      when: not (hostvars[inventory_hostname].control_plane | default(false))
+        - name: Apply system updates
+          ansible.builtin.dnf:
+            name: "*"
+            state: latest
 
-    - name: Reboot node
-      ansible.builtin.reboot:
-        reboot_command: shutdown -r now
-        connect_timeout: 30
-        reboot_timeout: 600
-        pre_reboot_delay: 0
-        post_reboot_delay: 30
-      when: not (hostvars[inventory_hostname].control_plane | default(false))
+        - name: Reboot node
+          ansible.builtin.reboot:
+            reboot_command: shutdown -r now
+            connect_timeout: 30
+            reboot_timeout: 600
+            pre_reboot_delay: 0
+            post_reboot_delay: 30
 
-    - name: Mark node schedulable again
-      ansible.builtin.command:
-        argv:
-          - kubectl
-          - uncordon
-          - "{{ inventory_hostname }}"
-      when: not (hostvars[inventory_hostname].control_plane | default(false))
+        - name: Mark node schedulable again
+          ansible.builtin.command:
+            argv:
+              - kubectl
+              - uncordon
+              - "{{ inventory_hostname }}"
