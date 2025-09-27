@@ -3,10 +3,11 @@
   hosts: all
   become: true
   serial: 1
+  any_errors_fatal: true  # Halt the play entirely if any task fails to allow manual debugging
   tasks:
     - name: Maintenance tasks for control plane nodes
       when: controlplane | default(false) | bool
-      block:
+      block:  # The block runs sequentially; a failure in any step prevents the subsequent steps from executing
         - name: Drain node from cluster scheduling
           ansible.builtin.command:
             argv:
@@ -50,10 +51,11 @@
   hosts: all
   become: true
   serial: 1
+  any_errors_fatal: true  # Halt the play entirely if any task fails to allow manual debugging
   tasks:
     - name: Maintenance tasks for worker nodes
       when: not (controlplane | default(false) | bool)
-      block:
+      block:  # The block runs sequentially; a failure in any step prevents the subsequent steps from executing
         - name: Drain node from cluster scheduling
           ansible.builtin.command:
             argv:
