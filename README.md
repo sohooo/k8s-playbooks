@@ -21,6 +21,26 @@ This repository provides Ansible resources for operating Rancher Kubernetes Engi
 - Access to the target nodes with privilege escalation (`become`)
 - `kubectl` available on the nodes being maintained
 
+## Local development setup
+
+Set up a local Python virtual environment and install Ansible along with the linting tools used by the repository:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install ansible ansible-lint
+```
+
+Confirm the installation succeeded:
+
+```bash
+ansible --version
+ansible-lint --version
+```
+
+> **Tip:** Activate the virtual environment (`source .venv/bin/activate`) in every new shell before running the commands below so that the installed tooling is available.
+
 ## Usage
 
 Preview the inventory graph:
@@ -54,3 +74,18 @@ ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --limit 'all
 ```
 
 > **Note:** Each play runs with `serial: 1`, ensuring maintenance actions complete on one node before moving on to the next.
+
+## Verification
+
+After making changes to the playbooks or inventory, run the following commands from an activated virtual environment to ensure the content remains valid:
+
+```bash
+# Validate the inventory loads correctly
+ansible-inventory -i inventories/hosts.ini --graph
+
+# Lint the playbook content
+ansible-lint playbooks/maintenance.yml
+
+# Perform a syntax check without connecting to any hosts
+ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --syntax-check
+```
