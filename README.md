@@ -23,14 +23,14 @@ This repository provides Ansible resources for operating Rancher Kubernetes Engi
 
 ## Local development setup
 
-Set up a local Python virtual environment and install Ansible along with the linting tools used by the repository:
+Set up a local Python virtual environment and install Ansible along with the linting tools used by the repository by running the helper script:
 
 ```bash
-python3 -m venv .venv
+./scripts/setup-ansible.sh
 source .venv/bin/activate
-pip install --upgrade pip
-pip install ansible ansible-lint
 ```
+
+> The script creates a `.venv` directory in the repository by default. You can change the location by setting the `VENV_DIR` environment variable before running it.
 
 Confirm the installation succeeded:
 
