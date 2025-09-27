@@ -2,7 +2,7 @@
 
 This repository provides Ansible resources for operating Rancher Kubernetes Engine 2 (RKE2) clusters. It currently includes:
 
-- An inventory describing the `kube-alpha` and `kube-bravo` clusters with simple host definitions and a `control_plane` tag applied to scheduler nodes.
+- An INI inventory that defines a section per cluster and flags control-plane nodes with `controlplane=true`.
 - A maintenance playbook that drains, updates, reboots, and uncordons each host one at a time, ensuring control-plane nodes are serviced before workers.
 
 ## Repository layout
@@ -10,7 +10,7 @@ This repository provides Ansible resources for operating Rancher Kubernetes Engi
 ```
 .
 ├── inventories/
-│   └── hosts.yml          # Static inventory for kube-alpha and kube-bravo
+│   └── hosts.ini          # Static inventory for kube-alpha and kube-bravo
 └── playbooks/
     └── maintenance.yml    # Rolling maintenance workflow
 ```
@@ -26,25 +26,31 @@ This repository provides Ansible resources for operating Rancher Kubernetes Engi
 Preview the inventory graph:
 
 ```bash
-ansible-inventory -i inventories/hosts.yml --graph
+ansible-inventory -i inventories/hosts.ini --graph
 ```
 
 Run the maintenance workflow against both clusters:
 
 ```bash
-ansible-playbook -i inventories/hosts.yml playbooks/maintenance.yml
+ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml
 ```
 
 Limit execution to a specific cluster:
 
 ```bash
-ansible-playbook -i inventories/hosts.yml playbooks/maintenance.yml --limit kube_alpha
+ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --limit kube_alpha
 ```
 
 You can also target a single host:
 
 ```bash
-ansible-playbook -i inventories/hosts.yml playbooks/maintenance.yml --limit kube07
+ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --limit kube07
+```
+
+To work only on control-plane hosts across clusters, limit the run by their host variable:
+
+```bash
+ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --limit 'all[?controlplane]'
 ```
 
 > **Note:** Each play runs with `serial: 1`, ensuring maintenance actions complete on one node before moving on to the next.
