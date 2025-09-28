@@ -7,7 +7,7 @@
   tasks:
     - name: Maintenance tasks for control plane nodes
       when: controlplane | default(false) | bool
-      block:  # The block runs sequentially; a failure in any step prevents the subsequent steps from executing
+      block: &maintenance_task_sequence
         - name: Check if node is already cordoned
           ansible.builtin.command:
             argv:
@@ -34,44 +34,14 @@
           changed_when: true
           failed_when: node_drain_result.rc != 0
 
-        - name: Run Puppet agent
-          ansible.builtin.command:
-            argv:
-              - puppet
-              - agent
-              - --test
-          register: puppet_agent_result
-          changed_when: puppet_agent_result.rc == 2
-          failed_when: puppet_agent_result.rc not in [0, 2]
+        - name: Execute Puppet maintenance
+          ansible.builtin.import_tasks: tasks/common/puppet_agent.yml
 
-        - name: Check for available system updates
-          ansible.builtin.command:
-            argv:
-              - dnf
-              - -q
-              - check-update
-          register: dnf_check_result
-          changed_when: false
-          failed_when: dnf_check_result.rc not in [0, 100]
+        - name: Apply operating system updates
+          ansible.builtin.import_tasks: tasks/common/dnf_update.yml
 
-        - name: Apply system updates
-          when: dnf_check_result.rc == 100
-          ansible.builtin.command:
-            argv:
-              - dnf
-              - -y
-              - upgrade
-          register: dnf_upgrade_result
-          changed_when: true
-          failed_when: dnf_upgrade_result.rc != 0
-
-        - name: Reboot node
-          ansible.builtin.reboot:
-            reboot_command: shutdown -r now
-            connect_timeout: 30
-            reboot_timeout: 600
-            pre_reboot_delay: 0
-            post_reboot_delay: 30
+        - name: Restart node after maintenance
+          ansible.builtin.import_tasks: tasks/common/reboot.yml
 
         - name: Check node scheduling status after maintenance
           ansible.builtin.command:
@@ -105,92 +75,4 @@
   tasks:
     - name: Maintenance tasks for worker nodes
       when: not (controlplane | default(false) | bool)
-      block:  # The block runs sequentially; a failure in any step prevents the subsequent steps from executing
-        - name: Check if node is already cordoned
-          ansible.builtin.command:
-            argv:
-              - kubectl
-              - get
-              - node
-              - "{{ inventory_hostname }}"
-              - -o
-              - jsonpath={.spec.unschedulable}
-          register: node_cordon_status_before
-          changed_when: false
-          failed_when: node_cordon_status_before.rc != 0
-
-        - name: Drain node from cluster scheduling
-          when: (node_cordon_status_before.stdout | default('false') | trim | lower) != 'true'
-          ansible.builtin.command:
-            argv:
-              - kubectl
-              - drain
-              - "{{ inventory_hostname }}"
-              - --ignore-daemonsets
-              - --delete-emptydir-data
-          register: node_drain_result
-          changed_when: true
-          failed_when: node_drain_result.rc != 0
-
-        - name: Run Puppet agent
-          ansible.builtin.command:
-            argv:
-              - puppet
-              - agent
-              - --test
-          register: puppet_agent_result
-          changed_when: puppet_agent_result.rc == 2
-          failed_when: puppet_agent_result.rc not in [0, 2]
-
-        - name: Check for available system updates
-          ansible.builtin.command:
-            argv:
-              - dnf
-              - -q
-              - check-update
-          register: dnf_check_result
-          changed_when: false
-          failed_when: dnf_check_result.rc not in [0, 100]
-
-        - name: Apply system updates
-          when: dnf_check_result.rc == 100
-          ansible.builtin.command:
-            argv:
-              - dnf
-              - -y
-              - upgrade
-          register: dnf_upgrade_result
-          changed_when: true
-          failed_when: dnf_upgrade_result.rc != 0
-
-        - name: Reboot node
-          ansible.builtin.reboot:
-            reboot_command: shutdown -r now
-            connect_timeout: 30
-            reboot_timeout: 600
-            pre_reboot_delay: 0
-            post_reboot_delay: 30
-
-        - name: Check node scheduling status after maintenance
-          ansible.builtin.command:
-            argv:
-              - kubectl
-              - get
-              - node
-              - "{{ inventory_hostname }}"
-              - -o
-              - jsonpath={.spec.unschedulable}
-          register: node_cordon_status_after
-          changed_when: false
-          failed_when: node_cordon_status_after.rc != 0
-
-        - name: Mark node schedulable again
-          when: (node_cordon_status_after.stdout | default('false') | trim | lower) == 'true'
-          ansible.builtin.command:
-            argv:
-              - kubectl
-              - uncordon
-              - "{{ inventory_hostname }}"
-          register: node_uncordon_result
-          changed_when: true
-          failed_when: node_uncordon_result.rc != 0
+      block: *maintenance_task_sequence
