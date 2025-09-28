@@ -5,34 +5,32 @@
   serial: 1
   any_errors_fatal: true  # Halt the play entirely if any task fails to allow manual debugging
   tasks:
-    - name: Maintenance tasks for control plane nodes
+    - name: Maintenance workflow for control plane nodes
       when: controlplane | default(false) | bool
-      block: &maintenance_task_sequence
-        - name: Check if node is already cordoned
-          ansible.builtin.command:
-            argv:
-              - kubectl
-              - get
-              - node
-              - "{{ inventory_hostname }}"
-              - -o
-              - jsonpath={.spec.unschedulable}
-          register: node_cordon_status_before
-          changed_when: false
-          failed_when: node_cordon_status_before.rc != 0
+      block:
+        - name: Capture node scheduling state before maintenance
+          ansible.builtin.include_tasks:
+            file: tasks/node/get_cordon_status.yml
+          vars:
+            kube_node_name: "{{ inventory_hostname }}"
 
-        - name: Drain node from cluster scheduling
-          when: (node_cordon_status_before.stdout | default('false') | trim | lower) != 'true'
-          ansible.builtin.command:
-            argv:
-              - kubectl
-              - drain
-              - "{{ inventory_hostname }}"
-              - --ignore-daemonsets
-              - --delete-emptydir-data
-          register: node_drain_result
-          changed_when: true
-          failed_when: node_drain_result.rc != 0
+        - name: Remember original scheduling state
+          ansible.builtin.set_fact:
+            kube_node_was_cordoned: "{{ kube_node_is_cordoned | default(false) | bool }}"
+
+        - name: Ensure node is cordoned prior to maintenance
+          when: not (kube_node_is_cordoned | default(false) | bool)
+          ansible.builtin.include_tasks:
+            file: tasks/node/cordon.yml
+          vars:
+            kube_node_name: "{{ inventory_hostname }}"
+
+        - name: Drain workloads before running maintenance
+          when: not (kube_node_was_cordoned | default(false) | bool)
+          ansible.builtin.include_tasks:
+            file: tasks/node/drain.yml
+          vars:
+            kube_node_name: "{{ inventory_hostname }}"
 
         - name: Execute Puppet maintenance
           ansible.builtin.import_tasks: tasks/common/puppet_agent.yml
@@ -43,29 +41,18 @@
         - name: Restart node after maintenance
           ansible.builtin.import_tasks: tasks/common/reboot.yml
 
-        - name: Check node scheduling status after maintenance
-          ansible.builtin.command:
-            argv:
-              - kubectl
-              - get
-              - node
-              - "{{ inventory_hostname }}"
-              - -o
-              - jsonpath={.spec.unschedulable}
-          register: node_cordon_status_after
-          changed_when: false
-          failed_when: node_cordon_status_after.rc != 0
+        - name: Refresh node scheduling state after reboot
+          ansible.builtin.include_tasks:
+            file: tasks/node/get_cordon_status.yml
+          vars:
+            kube_node_name: "{{ inventory_hostname }}"
 
-        - name: Mark node schedulable again
-          when: (node_cordon_status_after.stdout | default('false') | trim | lower) == 'true'
-          ansible.builtin.command:
-            argv:
-              - kubectl
-              - uncordon
-              - "{{ inventory_hostname }}"
-          register: node_uncordon_result
-          changed_when: true
-          failed_when: node_uncordon_result.rc != 0
+        - name: Restore scheduling state if node was previously schedulable
+          when: not (kube_node_was_cordoned | default(false) | bool) and (kube_node_is_cordoned | default(false) | bool)
+          ansible.builtin.include_tasks:
+            file: tasks/node/uncordon.yml
+          vars:
+            kube_node_name: "{{ inventory_hostname }}"
 
 - name: Maintenance on worker nodes
   hosts: all
@@ -73,6 +60,51 @@
   serial: 1
   any_errors_fatal: true  # Halt the play entirely if any task fails to allow manual debugging
   tasks:
-    - name: Maintenance tasks for worker nodes
+    - name: Maintenance workflow for worker nodes
       when: not (controlplane | default(false) | bool)
-      block: *maintenance_task_sequence
+      block:
+        - name: Capture node scheduling state before maintenance
+          ansible.builtin.include_tasks:
+            file: tasks/node/get_cordon_status.yml
+          vars:
+            kube_node_name: "{{ inventory_hostname }}"
+
+        - name: Remember original scheduling state
+          ansible.builtin.set_fact:
+            kube_node_was_cordoned: "{{ kube_node_is_cordoned | default(false) | bool }}"
+
+        - name: Ensure node is cordoned prior to maintenance
+          when: not (kube_node_is_cordoned | default(false) | bool)
+          ansible.builtin.include_tasks:
+            file: tasks/node/cordon.yml
+          vars:
+            kube_node_name: "{{ inventory_hostname }}"
+
+        - name: Drain workloads before running maintenance
+          when: not (kube_node_was_cordoned | default(false) | bool)
+          ansible.builtin.include_tasks:
+            file: tasks/node/drain.yml
+          vars:
+            kube_node_name: "{{ inventory_hostname }}"
+
+        - name: Execute Puppet maintenance
+          ansible.builtin.import_tasks: tasks/common/puppet_agent.yml
+
+        - name: Apply operating system updates
+          ansible.builtin.import_tasks: tasks/common/dnf_update.yml
+
+        - name: Restart node after maintenance
+          ansible.builtin.import_tasks: tasks/common/reboot.yml
+
+        - name: Refresh node scheduling state after reboot
+          ansible.builtin.include_tasks:
+            file: tasks/node/get_cordon_status.yml
+          vars:
+            kube_node_name: "{{ inventory_hostname }}"
+
+        - name: Restore scheduling state if node was previously schedulable
+          when: not (kube_node_was_cordoned | default(false) | bool) and (kube_node_is_cordoned | default(false) | bool)
+          ansible.builtin.include_tasks:
+            file: tasks/node/uncordon.yml
+          vars:
+            kube_node_name: "{{ inventory_hostname }}"

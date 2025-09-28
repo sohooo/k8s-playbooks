@@ -1,0 +1,15 @@
+---
+# Mark a Kubernetes node as schedulable again.
+- name: Uncordon {{ kube_node_name | default(inventory_hostname) }}
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - uncordon
+      - "{{ kube_node_name | default(inventory_hostname) }}"
+  register: kube_node_uncordon_result
+  changed_when: true
+  failed_when: kube_node_uncordon_result.rc != 0
+
+- name: Update cached cordon status for {{ kube_node_name | default(inventory_hostname) }}
+  ansible.builtin.set_fact:
+    kube_node_is_cordoned: false
