@@ -1,0 +1,13 @@
+---
+# Drain workloads from a Kubernetes node while tolerating daemonsets and emptyDir data.
+- name: Drain {{ kube_node_name | default(inventory_hostname) }}
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - drain
+      - "{{ kube_node_name | default(inventory_hostname) }}"
+      - --ignore-daemonsets
+      - --delete-emptydir-data
+  register: kube_node_drain_result
+  changed_when: true
+  failed_when: kube_node_drain_result.rc != 0
