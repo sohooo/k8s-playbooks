@@ -1,0 +1,7 @@
+---
+- ansible.builtin.import_tasks: rke2_service_facts.yml
+
+- name: Start RKE2 service
+  ansible.builtin.service:
+    name: "{{ rke2_service_name }}"
+    state: started

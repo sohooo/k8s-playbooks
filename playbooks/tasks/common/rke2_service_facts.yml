@@ -1,0 +1,20 @@
+---
+- name: Gather systemd service facts
+  ansible.builtin.service_facts:
+
+- name: Determine RKE2 service name
+  ansible.builtin.set_fact:
+    rke2_service_name: >-
+      {{
+        'rke2-server'
+        if 'rke2-server.service' in ansible_facts.services
+        else 'rke2-agent'
+        if 'rke2-agent.service' in ansible_facts.services
+        else ''
+      }}
+
+- name: Ensure an RKE2 service is present
+  ansible.builtin.assert:
+    that:
+      - rke2_service_name != ''
+    fail_msg: Neither rke2-server nor rke2-agent systemd service was found on this node.
