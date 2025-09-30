@@ -1,0 +1,24 @@
+---
+- name: Ensure kube_cluster is defined for all targeted hosts
+  ansible.builtin.assert:
+    that:
+      - hostvars[item].kube_cluster is defined
+    fail_msg: >-
+      kube_cluster is not defined for {{ item }}. Update the inventory or limit the play to a specific cluster before running maintenance.
+  loop: "{{ ansible_play_hosts_all }}"
+  loop_control:
+    label: "{{ item }}"
+  run_once: true
+
+- name: Ensure maintenance targets a single Kubernetes cluster
+  ansible.builtin.assert:
+    that:
+      - >-
+          (ansible_play_hosts_all
+          | map('extract', hostvars, 'kube_cluster')
+          | list
+          | unique
+          | length) == 1
+    fail_msg: >-
+      Maintenance must be limited to a single Kubernetes cluster. Use --limit or adjust your inventory to target one cluster at a time.
+  run_once: true

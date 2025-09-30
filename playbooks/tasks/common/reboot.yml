@@ -6,3 +6,14 @@
     reboot_timeout: 600
     pre_reboot_delay: 0
     post_reboot_delay: 30
+
+- name: Wait for Kubernetes API to respond after reboot
+  ansible.builtin.command: kubectl get --raw=/readyz
+  register: kube_api_readiness_check
+  delegate_to: "{{ kube_kubectl_delegate | default(inventory_hostname) }}"
+  retries: 60
+  delay: 5
+  until: >-
+    kube_api_readiness_check.rc == 0 and
+    (kube_api_readiness_check.stdout | default('') | trim | lower) == 'ok'
+  changed_when: false
