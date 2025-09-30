@@ -28,7 +28,8 @@ See [`docs/README.md`](docs/README.md) for deep dives into the playbook internal
 
 - Ansible 2.12+ (tested syntax)
 - Access to the target nodes with privilege escalation (`become`)
-- `kubectl` available on the nodes being maintained
+- `kubectl` available on control-plane nodes (worker nodes delegate Kubernetes operations to a
+  control-plane host)
 
 ## Local development setup
 

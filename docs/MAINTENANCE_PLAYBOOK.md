@@ -31,6 +31,11 @@ executes the following steps:
 
 Each command task has explicit `failed_when` rules so that unexpected return codes surface immediately.
 
+> **Delegation note:** RKE2 worker nodes do not ship with `kubectl` or a KUBECONFIG. The playbook therefore
+> delegates every Kubernetes command to a control-plane host within the same cluster whenever the current
+> target lacks the tooling. This keeps the maintenance workflow functional across all node types while
+> preserving the node-specific scheduling logic.
+
 ## Extending the workflow
 
 - Add new tasks to `maintenance_sequence.yml` to keep the control-plane/worker orchestration intact.
