@@ -71,24 +71,26 @@
     - name: Validate cluster scope before maintenance
       ansible.builtin.import_tasks: tasks/common/ensure_single_cluster.yml
   tasks:
-    - name: Ensure server group mapping is defined
-      ansible.builtin.fail:
-        msg: >-
-          kube_server_group is not defined for {{ inventory_hostname }}. Update the inventory so agent nodes know which
-          server group to delegate kubectl operations to.
-      when: kube_server_group is not defined
-
-    - name: Determine kubectl delegate for agent nodes
+    - name: Determine available server delegates for this cluster
       ansible.builtin.set_fact:
-        kube_kubectl_delegate: "{{ groups[kube_server_group][0] }}"
-      when: kube_server_group is defined and (groups[kube_server_group] | default([])) | length > 0
+        kube_cluster_server_candidates: >-
+          {{
+            (groups['server'] | default([]))
+            | intersect(groups[kube_cluster] | default([]))
+          }}
 
     - name: Fail when no server delegate is available for the agent
       ansible.builtin.fail:
         msg: >-
-          Unable to locate a server host for {{ inventory_hostname }} in group {{ kube_server_group | default('undefined') }}.
-          Ensure the inventory contains at least one server node for each cluster.
-      when: (groups[kube_server_group] | default([])) | length == 0
+          Unable to locate a server host for {{ inventory_hostname }} in the server group using the
+          kube_cluster convention. Ensure the inventory contains at least one server node for the
+          {{ kube_cluster | default('undefined') }} cluster.
+      when: (kube_cluster_server_candidates | default([])) | length == 0
+
+    - name: Determine kubectl delegate for agent nodes
+      ansible.builtin.set_fact:
+        kube_kubectl_delegate: "{{ kube_cluster_server_candidates[0] }}"
+      when: (kube_cluster_server_candidates | default([])) | length > 0
 
     - name: Run maintenance workflow for agent nodes
       block: *node_maintenance_workflow

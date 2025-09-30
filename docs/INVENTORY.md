@@ -6,8 +6,7 @@ make individual clusters easy to target while keeping per-host metadata minimal.
 ## Group layout
 
 - Each `kube_<name>` group represents a single RKE2 cluster.
-- Cluster groups expose helper variables such as `kube_server_group` so that agent nodes can discover their control-plane
-  delegate.
+- Every cluster sets the `kube_cluster` variable so plays can enforce that maintenance only targets one cluster at a time.
 - Inside each cluster the `server` and `agent` child groups keep control-plane and worker nodes separate without introducing
   extra per-cluster helper groups.
 
@@ -19,7 +18,6 @@ all:
     kube_alpha:
       vars:
         kube_cluster: kube_alpha
-        kube_server_group: server
       children:
         server:
           hosts:
