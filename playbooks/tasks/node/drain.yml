@@ -8,6 +8,7 @@
       - "{{ kube_node_name | default(inventory_hostname) }}"
       - --ignore-daemonsets
       - --delete-emptydir-data
+  delegate_to: "{{ kube_kubectl_delegate | default(inventory_hostname) }}"
   register: kube_node_drain_result
   changed_when: true
   failed_when: kube_node_drain_result.rc != 0

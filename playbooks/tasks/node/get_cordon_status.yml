@@ -9,6 +9,7 @@
       - "{{ kube_node_name | default(inventory_hostname) }}"
       - -o
       - jsonpath={.spec.unschedulable}
+  delegate_to: "{{ kube_kubectl_delegate | default(inventory_hostname) }}"
   register: kube_node_cordon_status
   changed_when: false
   failed_when: kube_node_cordon_status.rc != 0

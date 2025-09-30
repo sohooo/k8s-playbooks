@@ -63,6 +63,40 @@
     - name: Maintenance workflow for worker nodes
       when: not (controlplane | default(false) | bool)
       block:
+        - name: Prepare kubectl delegation context for worker nodes
+          block:
+            - name: Discover cluster groups for {{ inventory_hostname }}
+              ansible.builtin.set_fact:
+                kube_cluster_groups: "{{ group_names | select('match', '^kube_') | list }}"
+
+            - name: Fail when cluster group cannot be determined
+              ansible.builtin.fail:
+                msg: >-
+                  Unable to determine the cluster grouping for {{ inventory_hostname }}. Ensure the
+                  host belongs to a group prefixed with "kube_" so that a control-plane delegate can
+                  be selected.
+              when: (kube_cluster_groups | length) == 0
+
+            - name: Record primary cluster group for delegation
+              when: (kube_cluster_groups | length) > 0
+              ansible.builtin.set_fact:
+                kube_cluster_group: "{{ kube_cluster_groups[0] }}"
+
+            - name: Choose control-plane delegate for kubectl commands
+              ansible.builtin.set_fact:
+                kube_kubectl_delegate: "{{ kube_kubectl_delegate | default(item) }}"
+              loop: "{{ groups[kube_cluster_group] | default([]) }}"
+              loop_control:
+                label: "{{ item }}"
+              when: hostvars[item].controlplane | default(false) | bool
+
+            - name: Fail if no control-plane delegate was discovered
+              ansible.builtin.fail:
+                msg: >-
+                  Unable to locate a control-plane host with kubectl access for {{ inventory_hostname }}
+                  in group {{ kube_cluster_group | default('unknown') }}.
+              when: kube_kubectl_delegate is not defined
+
         - name: Capture node scheduling state before maintenance
           ansible.builtin.include_tasks:
             file: tasks/node/get_cordon_status.yml
