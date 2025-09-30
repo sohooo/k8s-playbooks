@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/inventory.schema.json",
+  "title": "Kubernetes inventory schema",
+  "type": "object",
+  "additionalProperties": true,
+  "definitions": {
+    "hostsConstraint": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        {
+          "type": "object",
+          "minProperties": 1
+        }
+      ]
+    },
+    "hostsGroup": {
+      "type": "object",
+      "properties": {
+        "hosts": {
+          "$ref": "#/definitions/hostsConstraint"
+        }
+      },
+      "required": [
+        "hosts"
+      ],
+      "additionalProperties": true
+    }
+  },
+  "patternProperties": {
+    "^kube_": {
+      "type": "object",
+      "properties": {
+        "children": {
+          "type": "object",
+          "properties": {
+            "server": {
+              "$ref": "#/definitions/hostsGroup"
+            },
+            "agent": {
+              "type": "object",
+              "properties": {
+                "hosts": {
+                  "$ref": "#/definitions/hostsConstraint"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "required": [
+            "server"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "children"
+      ],
+      "additionalProperties": true
+    }
+  }
+}
