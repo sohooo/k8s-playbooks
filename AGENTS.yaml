@@ -1,0 +1,4 @@
+notes:
+  - scope: inventories
+    message: >-
+      When modifying files under inventories/, run `python scripts/validate_inventory.py` to validate the rendered inventory before committing.

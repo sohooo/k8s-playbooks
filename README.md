@@ -80,9 +80,13 @@ ansible-playbook -i inventories/hosts.yml playbooks/maintenance.yml --limit "kub
 ## Verification
 
 After making changes to the playbooks or inventory, run the following commands from an activated virtual environment to ensure
-the content remains valid:
+the content remains valid. When modifying `inventories/hosts.yml`, validate the rendered inventory against the schema before
+committing so structural regressions are caught early:
 
 ```bash
+# Verify inventory structure matches the required schema
+python scripts/validate_inventory.py
+
 # Validate the inventory loads correctly
 ansible-inventory -i inventories/hosts.yml --graph
 

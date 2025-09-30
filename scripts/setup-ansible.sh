@@ -15,7 +15,7 @@ python3 -m venv "${VENV_DIR}"
 source "${VENV_DIR}/bin/activate"
 
 pip install --upgrade pip
-pip install --upgrade ansible ansible-lint
+pip install --upgrade ansible ansible-lint jsonschema
 
 echo "Virtual environment created at ${VENV_DIR}" >&2
 echo "Activate it with: source ${VENV_DIR}/bin/activate" >&2
