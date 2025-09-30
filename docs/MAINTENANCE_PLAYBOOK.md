@@ -7,8 +7,8 @@ that re-use the same task sequence while leveraging the inventory's `server` and
 
 1. **Server play** – Targets the inventory `server` group, ensuring control-plane nodes are serviced first. With `serial: 1` the
    play finishes maintenance on one server before moving on to the next.
-2. **Agent play** – Runs the same sequence for worker nodes. Each host discovers the appropriate server delegate using the
-   `kube_server_group` variable defined in the inventory.
+2. **Agent play** – Runs the same sequence for worker nodes. Each host discovers the appropriate server delegate by intersecting
+   the inventory `server` group with the hosts that share its `kube_cluster` value.
 
 The separation into two plays keeps the orchestration logic obvious while the inventory grouping removes the need for per-host
 flags or manual filtering.
