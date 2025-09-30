@@ -1,18 +1,17 @@
 ---
-- name: Maintenance on control plane nodes
-  hosts: all
+- name: Maintenance on rke2 server nodes
+  hosts: server
   become: true
   serial: 1
   any_errors_fatal: true  # Halt the play entirely if any task fails to allow manual debugging
   tasks:
-    - name: Maintenance workflow for control plane nodes
-      when: controlplane | default(false) | bool
-      block:
+    - name: Run maintenance workflow for server nodes
+      block: &node_maintenance_workflow
         - name: Capture node scheduling state before maintenance
           ansible.builtin.include_tasks:
             file: tasks/node/get_cordon_status.yml
           vars:
-            kube_node_name: "{{ inventory_hostname }}"
+            kube_node_name: "{{ kube_node_name | default(inventory_hostname) }}"
 
         - name: Remember original scheduling state
           ansible.builtin.set_fact:
@@ -23,14 +22,14 @@
           ansible.builtin.include_tasks:
             file: tasks/node/cordon.yml
           vars:
-            kube_node_name: "{{ inventory_hostname }}"
+            kube_node_name: "{{ kube_node_name | default(inventory_hostname) }}"
 
         - name: Drain workloads before running maintenance
           when: not (kube_node_was_cordoned | default(false) | bool)
           ansible.builtin.include_tasks:
             file: tasks/node/drain.yml
           vars:
-            kube_node_name: "{{ inventory_hostname }}"
+            kube_node_name: "{{ kube_node_name | default(inventory_hostname) }}"
 
         - name: Execute Puppet maintenance
           ansible.builtin.import_tasks: tasks/common/puppet_agent.yml
@@ -45,100 +44,39 @@
           ansible.builtin.include_tasks:
             file: tasks/node/get_cordon_status.yml
           vars:
-            kube_node_name: "{{ inventory_hostname }}"
+            kube_node_name: "{{ kube_node_name | default(inventory_hostname) }}"
 
         - name: Restore scheduling state if node was previously schedulable
           when: not (kube_node_was_cordoned | default(false) | bool) and (kube_node_is_cordoned | default(false) | bool)
           ansible.builtin.include_tasks:
             file: tasks/node/uncordon.yml
           vars:
-            kube_node_name: "{{ inventory_hostname }}"
+            kube_node_name: "{{ kube_node_name | default(inventory_hostname) }}"
 
-- name: Maintenance on worker nodes
-  hosts: all
+- name: Maintenance on rke2 agent nodes
+  hosts: agent
   become: true
   serial: 1
   any_errors_fatal: true  # Halt the play entirely if any task fails to allow manual debugging
   tasks:
-    - name: Maintenance workflow for worker nodes
-      when: not (controlplane | default(false) | bool)
-      block:
-        - name: Prepare kubectl delegation context for worker nodes
-          block:
-            - name: Discover cluster groups for {{ inventory_hostname }}
-              ansible.builtin.set_fact:
-                kube_cluster_groups: "{{ group_names | select('match', '^kube_') | list }}"
+    - name: Ensure server group mapping is defined
+      ansible.builtin.fail:
+        msg: >-
+          kube_server_group is not defined for {{ inventory_hostname }}. Update the inventory so agent nodes know which
+          server group to delegate kubectl operations to.
+      when: kube_server_group is not defined
 
-            - name: Fail when cluster group cannot be determined
-              ansible.builtin.fail:
-                msg: >-
-                  Unable to determine the cluster grouping for {{ inventory_hostname }}. Ensure the
-                  host belongs to a group prefixed with "kube_" so that a control-plane delegate can
-                  be selected.
-              when: (kube_cluster_groups | length) == 0
+    - name: Determine kubectl delegate for agent nodes
+      ansible.builtin.set_fact:
+        kube_kubectl_delegate: "{{ groups[kube_server_group][0] }}"
+      when: kube_server_group is defined and (groups[kube_server_group] | default([])) | length > 0
 
-            - name: Record primary cluster group for delegation
-              when: (kube_cluster_groups | length) > 0
-              ansible.builtin.set_fact:
-                kube_cluster_group: "{{ kube_cluster_groups[0] }}"
+    - name: Fail when no server delegate is available for the agent
+      ansible.builtin.fail:
+        msg: >-
+          Unable to locate a server host for {{ inventory_hostname }} in group {{ kube_server_group | default('undefined') }}.
+          Ensure the inventory contains at least one server node for each cluster.
+      when: (groups[kube_server_group] | default([])) | length == 0
 
-            - name: Choose control-plane delegate for kubectl commands
-              ansible.builtin.set_fact:
-                kube_kubectl_delegate: "{{ kube_kubectl_delegate | default(item) }}"
-              loop: "{{ groups[kube_cluster_group] | default([]) }}"
-              loop_control:
-                label: "{{ item }}"
-              when: hostvars[item].controlplane | default(false) | bool
-
-            - name: Fail if no control-plane delegate was discovered
-              ansible.builtin.fail:
-                msg: >-
-                  Unable to locate a control-plane host with kubectl access for {{ inventory_hostname }}
-                  in group {{ kube_cluster_group | default('unknown') }}.
-              when: kube_kubectl_delegate is not defined
-
-        - name: Capture node scheduling state before maintenance
-          ansible.builtin.include_tasks:
-            file: tasks/node/get_cordon_status.yml
-          vars:
-            kube_node_name: "{{ inventory_hostname }}"
-
-        - name: Remember original scheduling state
-          ansible.builtin.set_fact:
-            kube_node_was_cordoned: "{{ kube_node_is_cordoned | default(false) | bool }}"
-
-        - name: Ensure node is cordoned prior to maintenance
-          when: not (kube_node_is_cordoned | default(false) | bool)
-          ansible.builtin.include_tasks:
-            file: tasks/node/cordon.yml
-          vars:
-            kube_node_name: "{{ inventory_hostname }}"
-
-        - name: Drain workloads before running maintenance
-          when: not (kube_node_was_cordoned | default(false) | bool)
-          ansible.builtin.include_tasks:
-            file: tasks/node/drain.yml
-          vars:
-            kube_node_name: "{{ inventory_hostname }}"
-
-        - name: Execute Puppet maintenance
-          ansible.builtin.import_tasks: tasks/common/puppet_agent.yml
-
-        - name: Apply operating system updates
-          ansible.builtin.import_tasks: tasks/common/dnf_update.yml
-
-        - name: Restart node after maintenance
-          ansible.builtin.import_tasks: tasks/common/reboot.yml
-
-        - name: Refresh node scheduling state after reboot
-          ansible.builtin.include_tasks:
-            file: tasks/node/get_cordon_status.yml
-          vars:
-            kube_node_name: "{{ inventory_hostname }}"
-
-        - name: Restore scheduling state if node was previously schedulable
-          when: not (kube_node_was_cordoned | default(false) | bool) and (kube_node_is_cordoned | default(false) | bool)
-          ansible.builtin.include_tasks:
-            file: tasks/node/uncordon.yml
-          vars:
-            kube_node_name: "{{ inventory_hostname }}"
+    - name: Run maintenance workflow for agent nodes
+      block: *node_maintenance_workflow
