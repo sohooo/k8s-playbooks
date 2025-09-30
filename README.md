@@ -2,7 +2,7 @@
 
 This repository provides Ansible resources for operating Rancher Kubernetes Engine 2 (RKE2) clusters. It currently includes:
 
-- A static INI inventory organised per cluster with control-plane nodes flagged via `controlplane=true`.
+- A readable YAML inventory that organises hosts per cluster and exposes dedicated `server` and `agent` groups.
 - A rolling maintenance playbook that drains, updates, reboots, and uncordons each host one at a time, ensuring control-plane
   nodes are serviced before workers.
 
@@ -12,12 +12,11 @@ This repository provides Ansible resources for operating Rancher Kubernetes Engi
 .
 ├── docs/                     # Extended documentation and onboarding material
 ├── inventories/
-│   └── hosts.ini             # Static inventory for the managed clusters
+│   └── hosts.yml             # Static inventory for the managed clusters
 ├── playbooks/
 │   ├── maintenance.yml       # Entry point for the maintenance workflow
 │   └── tasks/
-│       ├── common/           # Re-usable task snippets for maintenance actions
-│       └── maintenance_sequence.yml
+│       └── common/           # Re-usable task snippets for maintenance actions
 └── scripts/
     └── setup-ansible.sh      # Helper script to create the tooling virtual environment
 ```
@@ -59,31 +58,21 @@ ansible-lint --version
 Preview the inventory graph:
 
 ```bash
-ansible-inventory -i inventories/hosts.ini --graph
+ansible-inventory -i inventories/hosts.yml --graph
 ```
 
-Run the maintenance workflow against both clusters:
+Run the maintenance workflow against a single cluster:
 
 ```bash
-ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml
+ansible-playbook -i inventories/hosts.yml playbooks/maintenance.yml --limit kube_alpha
 ```
 
-Limit execution to a specific cluster:
+You can also target an individual host or a subset of node types:
 
 ```bash
-ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --limit kube_alpha
-```
-
-You can also target a single host:
-
-```bash
-ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --limit kube07
-```
-
-To work only on control-plane hosts across clusters, limit the run by their host variable:
-
-```bash
-ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --limit 'all[?controlplane]'
+ansible-playbook -i inventories/hosts.yml playbooks/maintenance.yml --limit kube02
+ansible-playbook -i inventories/hosts.yml playbooks/maintenance.yml --limit "kube_alpha:&server"
+ansible-playbook -i inventories/hosts.yml playbooks/maintenance.yml --limit "kube_alpha:&agent"
 ```
 
 > **Note:** Each play runs with `serial: 1`, ensuring maintenance actions complete on one node before moving on to the next.
@@ -95,11 +84,11 @@ the content remains valid:
 
 ```bash
 # Validate the inventory loads correctly
-ansible-inventory -i inventories/hosts.ini --graph
+ansible-inventory -i inventories/hosts.yml --graph
 
 # Lint the playbook content
 ansible-lint playbooks/maintenance.yml
 
 # Perform a syntax check without connecting to any hosts
-ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --syntax-check
+ansible-playbook -i inventories/hosts.yml playbooks/maintenance.yml --syntax-check
 ```

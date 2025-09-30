@@ -8,12 +8,12 @@ behaviour when working on the playbooks in this repository.
 - **Syntax validation** – Always start with a parse check to catch indentation or YAML
   issues before connecting to hosts:
   ```bash
-  ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --syntax-check
+  ansible-playbook -i inventories/hosts.yml playbooks/maintenance.yml --syntax-check
   ```
 - **No-op dry runs** – Use check mode to review the planned changes without executing
   them. Combine with a host limit to keep the output focused:
   ```bash
-  ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml \
+  ansible-playbook -i inventories/hosts.yml playbooks/maintenance.yml \
     --check --limit kube_alpha
   ```
 - **Diff output** – Add `--diff` when you want to inspect the file or template

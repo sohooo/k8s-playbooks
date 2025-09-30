@@ -1,22 +1,22 @@
 # Maintenance Playbook Reference
 
-The `playbooks/maintenance.yml` file is the primary entry point for scheduled upkeep of the RKE2 clusters. It is intentionally
-simple: the file contains two plays that re-use the same task sequence so that control-plane nodes are completed before worker
-nodes.
+The `playbooks/maintenance.yml` file is the primary entry point for scheduled upkeep of the RKE2 clusters. It contains two plays
+that re-use the same task sequence while leveraging the inventory's `server` and `agent` groups to express intent directly.
 
 ## Execution order
 
-1. **Control-plane play** – Targets every host but immediately skips nodes without `controlplane=true`. With `serial: 1` the play
-   finishes maintenance on one control-plane node before moving on to the next.
-2. **Worker play** – Runs the exact same maintenance sequence for the remaining nodes, again processing them one at a time.
+1. **Server play** – Targets the inventory `server` group, ensuring control-plane nodes are serviced first. With `serial: 1` the
+   play finishes maintenance on one server before moving on to the next.
+2. **Agent play** – Runs the same sequence for worker nodes. Each host discovers the appropriate server delegate using the
+   `kube_server_group` variable defined in the inventory.
 
-The separation into two plays keeps the orchestration logic obvious: control-plane availability is prioritised without having to
-manage custom host groups or delegate logic to external tooling.
+The separation into two plays keeps the orchestration logic obvious while the inventory grouping removes the need for per-host
+flags or manual filtering.
 
 ## Task sequence
 
-The shared implementation lives in [`playbooks/tasks/maintenance_sequence.yml`](../playbooks/tasks/maintenance_sequence.yml). It
-executes the following steps:
+Both plays embed the same maintenance block directly in the playbook so that the workflow remains visible without chasing extra
+task files. The block executes the following steps:
 
 1. **Check cordon status** – Captures whether the node is already cordoned to avoid double-draining.
 2. **Drain if required** – Runs `kubectl drain` only when the node was schedulable.
@@ -38,7 +38,7 @@ Each command task has explicit `failed_when` rules so that unexpected return cod
 
 ## Extending the workflow
 
-- Add new tasks to `maintenance_sequence.yml` to keep the control-plane/worker orchestration intact.
+- Add new steps to the maintenance block in `playbooks/maintenance.yml` so the server/agent orchestration stays in sync.
 - For optional steps, prefer wrapping the included tasks in `block` statements with clear conditionals so the behaviour remains
   discoverable.
 - When a new maintenance action requires additional variables, document them in the task file and consider providing defaults in
