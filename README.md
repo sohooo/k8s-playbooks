@@ -2,7 +2,7 @@
 
 This repository provides Ansible resources for operating Rancher Kubernetes Engine 2 (RKE2) clusters. It currently includes:
 
-- A readable YAML inventory that organises hosts per cluster and exposes dedicated `server` and `agent` groups.
+- A readable INI inventory that organises hosts per cluster while using host variables to distinguish control-plane nodes.
 - A rolling maintenance playbook that drains, updates, reboots, and uncordons each host one at a time, ensuring control-plane
   nodes are serviced before workers.
 
@@ -12,7 +12,7 @@ This repository provides Ansible resources for operating Rancher Kubernetes Engi
 .
 ├── docs/                     # Extended documentation and onboarding material
 ├── inventories/
-│   └── hosts.yml             # Static inventory for the managed clusters
+│   └── hosts.ini             # Static inventory for the managed clusters
 ├── playbooks/
 │   ├── maintenance.yml       # Entry point for the maintenance workflow
 │   └── tasks/
@@ -58,21 +58,19 @@ ansible-lint --version
 Preview the inventory graph:
 
 ```bash
-ansible-inventory -i inventories/hosts.yml --graph
+ansible-inventory -i inventories/hosts.ini --graph
 ```
 
 Run the maintenance workflow against a single cluster:
 
 ```bash
-ansible-playbook -i inventories/hosts.yml playbooks/maintenance.yml --limit kube_alpha
+ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --limit kube_alpha
 ```
 
 You can also target an individual host or a subset of node types:
 
 ```bash
-ansible-playbook -i inventories/hosts.yml playbooks/maintenance.yml --limit kube02
-ansible-playbook -i inventories/hosts.yml playbooks/maintenance.yml --limit "kube_alpha:&server"
-ansible-playbook -i inventories/hosts.yml playbooks/maintenance.yml --limit "kube_alpha:&agent"
+ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --limit kube02
 ```
 
 > **Note:** Each play runs with `serial: 1`, ensuring maintenance actions complete on one node before moving on to the next.
@@ -80,24 +78,28 @@ ansible-playbook -i inventories/hosts.yml playbooks/maintenance.yml --limit "kub
 ### Running ad-hoc commands
 
 Use Ansible ad-hoc commands for quick spot checks or remediation steps without running the full maintenance playbook. The
-examples below assume the provided inventory (`inventories/hosts.yml`) and demonstrate common tasks for an RKE2 cluster.
+examples below assume the provided inventory (`inventories/hosts.ini`) and demonstrate common tasks for an RKE2 cluster. Adjust
+the `--limit` values to match the hosts you want to target.
 
-Check the Kubernetes control-plane versions by running `kubectl` on every server node:
+Check the Kubernetes control-plane versions by running `kubectl` on every server node in the `kube_alpha` cluster:
 
 ```bash
-ansible -i inventories/hosts.yml 'kube_alpha:&server' \
+ansible -i inventories/hosts.ini kube_alpha \
+  --limit 'kube01,kube02,kube03' \
   -m ansible.builtin.command \
   -a 'kubectl version --short'
 ```
 
-Confirm that the RKE2 services are healthy on both control-plane and worker nodes:
+Confirm that the RKE2 services are healthy on control-plane and worker nodes:
 
 ```bash
-ansible -i inventories/hosts.yml 'kube_alpha:&server' \
+ansible -i inventories/hosts.ini kube_alpha \
+  --limit 'kube01,kube02,kube03' \
   -m ansible.builtin.command \
   -a 'systemctl is-active rke2-server'
 
-ansible -i inventories/hosts.yml 'kube_alpha:&agent' \
+ansible -i inventories/hosts.ini kube_alpha \
+  --limit 'kube04,kube05' \
   -m ansible.builtin.command \
   -a 'systemctl is-active rke2-agent'
 ```
@@ -105,7 +107,8 @@ ansible -i inventories/hosts.yml 'kube_alpha:&agent' \
 Inspect Kubernetes node conditions from a single control-plane host and filter by the `Ready` status:
 
 ```bash
-ansible -i inventories/hosts.yml kube01 \
+ansible -i inventories/hosts.ini kube_alpha \
+  --limit kube01 \
   -m ansible.builtin.shell \
   -a "kubectl get nodes --no-headers | awk '{print \$1, \$2}'"
 ```
@@ -113,30 +116,26 @@ ansible -i inventories/hosts.yml kube01 \
 Collect the current pod scheduling pressure across namespaces to identify hotspots:
 
 ```bash
-ansible -i inventories/hosts.yml 'kube_alpha:&server' \
+ansible -i inventories/hosts.ini kube_alpha \
+  --limit kube01 \
   -m ansible.builtin.shell \
   -a "kubectl get pods -A --field-selector=status.phase!=Running"
 ```
 
-> **Tip:** Add `-b` when commands require privilege escalation and append `--limit <subset>` to further constrain the target
-> hosts.
+> **Tip:** Add `-b` when commands require privilege escalation and adjust `--limit` to narrow the target hosts.
 
 ## Verification
 
 After making changes to the playbooks or inventory, run the following commands from an activated virtual environment to ensure
-the content remains valid. When modifying `inventories/hosts.yml`, validate the rendered inventory against the schema before
-committing so structural regressions are caught early:
+the content remains valid:
 
 ```bash
-# Verify inventory structure matches the required schema
-python scripts/validate_inventory.py
-
 # Validate the inventory loads correctly
-ansible-inventory -i inventories/hosts.yml --graph
+ansible-inventory -i inventories/hosts.ini --graph
 
 # Lint the playbook content
 ansible-lint playbooks/maintenance.yml
 
 # Perform a syntax check without connecting to any hosts
-ansible-playbook -i inventories/hosts.yml playbooks/maintenance.yml --syntax-check
+ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --syntax-check
 ```

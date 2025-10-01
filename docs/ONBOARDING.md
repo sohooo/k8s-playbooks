@@ -41,7 +41,7 @@ ansible-lint --version
 Visualise the cluster layout to confirm your access to managed nodes:
 
 ```bash
-ansible-inventory -i inventories/hosts.yml --graph
+ansible-inventory -i inventories/hosts.ini --graph
 ```
 
 If you cannot reach the nodes yet, contact an administrator to obtain SSH access or to have the inventory updated with the
@@ -52,7 +52,7 @@ appropriate hostnames.
 Before making changes, perform a syntax check. This verifies that the playbook parses correctly without touching any hosts:
 
 ```bash
-ansible-playbook -i inventories/hosts.yml playbooks/maintenance.yml --syntax-check
+ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --syntax-check
 ```
 
 ## 6. Apply changes responsibly
@@ -60,7 +60,7 @@ ansible-playbook -i inventories/hosts.yml playbooks/maintenance.yml --syntax-che
 When you are ready to run the maintenance workflow against a test environment, limit execution to the relevant cluster or host:
 
 ```bash
-ansible-playbook -i inventories/hosts.yml playbooks/maintenance.yml --limit kube_alpha
+ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --limit kube_alpha
 ```
 
 Use the `--check` flag for a safe preview where possible, and always monitor the output for failed tasks. Reach out to the
