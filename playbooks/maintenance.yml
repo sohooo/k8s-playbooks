@@ -1,6 +1,6 @@
 ---
 - name: Maintenance on rke2 server nodes
-  hosts: server
+  hosts: all
   become: true
   serial: 1
   any_errors_fatal: true  # Halt the play entirely if any task fails to allow manual debugging
@@ -10,6 +10,10 @@
   pre_tasks:
     - name: Validate cluster scope before maintenance
       ansible.builtin.import_tasks: tasks/common/ensure_single_cluster.yml
+
+    - name: Skip non-control-plane nodes for server maintenance
+      when: not (kube_control_plane | default(false) | bool)
+      ansible.builtin.meta: end_host
   tasks:
     - name: Run maintenance workflow for server nodes
       block: &node_maintenance_workflow
@@ -50,7 +54,7 @@
             file: tasks/node/uncordon.yml
 
 - name: Maintenance on rke2 agent nodes
-  hosts: agent
+  hosts: all
   become: true
   serial: 1
   any_errors_fatal: true  # Halt the play entirely if any task fails to allow manual debugging
@@ -60,21 +64,28 @@
   pre_tasks:
     - name: Validate cluster scope before maintenance
       ansible.builtin.import_tasks: tasks/common/ensure_single_cluster.yml
+
+    - name: Skip control-plane nodes for agent maintenance
+      when: kube_control_plane | default(false) | bool
+      ansible.builtin.meta: end_host
   tasks:
     - name: Determine available server delegates for this cluster
       ansible.builtin.set_fact:
         kube_cluster_server_candidates: >-
           {{
-            (groups['server'] | default([]))
-            | intersect(groups[kube_cluster] | default([]))
+            (hostvars | dict2items)
+            | selectattr('key', 'in', groups[kube_cluster] | default([]))
+            | selectattr('value.kube_control_plane', 'defined')
+            | selectattr('value.kube_control_plane')
+            | map(attribute='key')
+            | list
           }}
 
     - name: Fail when no server delegate is available for the agent
       ansible.builtin.fail:
         msg: >-
-          Unable to locate a server host for {{ inventory_hostname }} in the server group using the
-          kube_cluster convention. Ensure the inventory contains at least one server node for the
-          {{ kube_cluster | default('undefined') }} cluster.
+          Unable to locate a control-plane host for {{ inventory_hostname }} in the {{ kube_cluster | default('undefined') }}
+          cluster. Ensure the inventory defines at least one server node with kube_control_plane: true.
       when: (kube_cluster_server_candidates | default([])) | length == 0
 
     - name: Determine kubectl delegate for agent nodes

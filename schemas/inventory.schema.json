@@ -5,6 +5,15 @@
   "type": "object",
   "additionalProperties": true,
   "definitions": {
+    "hostVars": {
+      "type": "object",
+      "properties": {
+        "kube_control_plane": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
     "hostsConstraint": {
       "anyOf": [
         {
@@ -16,7 +25,17 @@
         },
         {
           "type": "object",
-          "minProperties": 1
+          "minProperties": 1,
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/definitions/hostVars"
+              }
+            ]
+          }
         }
       ]
     },
@@ -34,35 +53,8 @@
     }
   },
   "patternProperties": {
-    "^kube_": {
-      "type": "object",
-      "properties": {
-        "children": {
-          "type": "object",
-          "properties": {
-            "server": {
-              "$ref": "#/definitions/hostsGroup"
-            },
-            "agent": {
-              "type": "object",
-              "properties": {
-                "hosts": {
-                  "$ref": "#/definitions/hostsConstraint"
-                }
-              },
-              "additionalProperties": true
-            }
-          },
-          "required": [
-            "server"
-          ],
-          "additionalProperties": true
-        }
-      },
-      "required": [
-        "children"
-      ],
-      "additionalProperties": true
+    "^kube_[a-z]+$": {
+      "$ref": "#/definitions/hostsGroup"
     }
   }
 }
