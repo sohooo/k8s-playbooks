@@ -1,21 +1,14 @@
 ---
-- name: Check for available system updates
-  ansible.builtin.command:
-    argv:
-      - dnf
-      - -q
-      - check-update
-  register: dnf_check_result
-  changed_when: false
-  failed_when: dnf_check_result.rc not in [0, 100]
+- name: Apply system updates with DNF
+  ansible.builtin.dnf:
+    name: "*"
+    state: latest
+    update_cache: true
+    update_only: true
+  register: dnf_update_result
 
-- name: Apply system updates
-  when: dnf_check_result.rc == 100
-  ansible.builtin.command:
-    argv:
-      - dnf
-      - -y
-      - upgrade
-  register: dnf_upgrade_result
-  changed_when: true
-  failed_when: dnf_upgrade_result.rc != 0
+- name: Report updated packages
+  ansible.builtin.debug:
+    msg: >-
+      Updated packages: {{ (dnf_update_result.results | default([])) | map(attribute='name') | list | join(', ') }}
+  when: dnf_update_result.changed and (dnf_update_result.results | default([])) | length > 0
