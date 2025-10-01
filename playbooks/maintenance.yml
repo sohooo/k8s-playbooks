@@ -16,8 +16,6 @@
         - name: Capture node scheduling state before maintenance
           ansible.builtin.include_tasks:
             file: tasks/node/get_cordon_status.yml
-          vars:
-            kube_node_name: "{{ kube_node_name | default(inventory_hostname) }}"
 
         - name: Remember original scheduling state
           ansible.builtin.set_fact:
@@ -27,15 +25,11 @@
           when: not (kube_node_is_cordoned | default(false) | bool)
           ansible.builtin.include_tasks:
             file: tasks/node/cordon.yml
-          vars:
-            kube_node_name: "{{ kube_node_name | default(inventory_hostname) }}"
 
         - name: Drain workloads before running maintenance
           when: not (kube_node_was_cordoned | default(false) | bool)
           ansible.builtin.include_tasks:
             file: tasks/node/drain.yml
-          vars:
-            kube_node_name: "{{ kube_node_name | default(inventory_hostname) }}"
 
         - name: Execute Puppet maintenance
           ansible.builtin.import_tasks: tasks/common/puppet_agent.yml
@@ -49,15 +43,11 @@
         - name: Refresh node scheduling state after reboot
           ansible.builtin.include_tasks:
             file: tasks/node/get_cordon_status.yml
-          vars:
-            kube_node_name: "{{ kube_node_name | default(inventory_hostname) }}"
 
         - name: Restore scheduling state if node was previously schedulable
           when: not (kube_node_was_cordoned | default(false) | bool) and (kube_node_is_cordoned | default(false) | bool)
           ansible.builtin.include_tasks:
             file: tasks/node/uncordon.yml
-          vars:
-            kube_node_name: "{{ kube_node_name | default(inventory_hostname) }}"
 
 - name: Maintenance on rke2 agent nodes
   hosts: agent
