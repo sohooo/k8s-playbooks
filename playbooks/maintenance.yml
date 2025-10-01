@@ -5,7 +5,7 @@
   serial: 1
   any_errors_fatal: true  # Halt the play entirely if any task fails to allow manual debugging
   vars:
-    kube_node_is_control_plane: "{{ controlplane | default(kube_control_plane) | default(false) | bool }}"
+    kube_node_is_control_plane: "{{ controlplane | default(false) | bool }}"
   environment:
     KUBECONFIG: /etc/rancher/rke2/rke2.yaml
     PATH: "/var/lib/rancher/rke2/bin:{{ ansible_env.PATH | default('/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin') }}"
@@ -61,7 +61,7 @@
   serial: 1
   any_errors_fatal: true  # Halt the play entirely if any task fails to allow manual debugging
   vars:
-    kube_node_is_control_plane: "{{ controlplane | default(kube_control_plane) | default(false) | bool }}"
+    kube_node_is_control_plane: "{{ controlplane | default(false) | bool }}"
   environment:
     KUBECONFIG: /etc/rancher/rke2/rke2.yaml
     PATH: "/var/lib/rancher/rke2/bin:{{ ansible_env.PATH | default('/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin') }}"
@@ -78,22 +78,11 @@
         kube_cluster_server_candidates: >-
           {{
             (
-              (
-                (hostvars | dict2items)
-                | selectattr('key', 'in', groups[kube_cluster] | default([]))
-                | selectattr('value.controlplane', 'defined')
-                | selectattr('value.controlplane')
-                | map(attribute='key')
-              )
-              +
-              (
-                (hostvars | dict2items)
-                | selectattr('key', 'in', groups[kube_cluster] | default([]))
-                | selectattr('value.controlplane', 'undefined')
-                | selectattr('value.kube_control_plane', 'defined')
-                | selectattr('value.kube_control_plane')
-                | map(attribute='key')
-              )
+              (hostvars | dict2items)
+              | selectattr('key', 'in', groups[kube_cluster] | default([]))
+              | selectattr('value.controlplane', 'defined')
+              | selectattr('value.controlplane')
+              | map(attribute='key')
             )
             | unique
             | list
