@@ -77,6 +77,50 @@ ansible-playbook -i inventories/hosts.yml playbooks/maintenance.yml --limit "kub
 
 > **Note:** Each play runs with `serial: 1`, ensuring maintenance actions complete on one node before moving on to the next.
 
+### Running ad-hoc commands
+
+Use Ansible ad-hoc commands for quick spot checks or remediation steps without running the full maintenance playbook. The
+examples below assume the provided inventory (`inventories/hosts.yml`) and demonstrate common tasks for an RKE2 cluster.
+
+Check the Kubernetes control-plane versions by running `kubectl` on every server node:
+
+```bash
+ansible -i inventories/hosts.yml 'kube_alpha:&server' \
+  -m ansible.builtin.command \
+  -a 'kubectl version --short'
+```
+
+Confirm that the RKE2 services are healthy on both control-plane and worker nodes:
+
+```bash
+ansible -i inventories/hosts.yml 'kube_alpha:&server' \
+  -m ansible.builtin.command \
+  -a 'systemctl is-active rke2-server'
+
+ansible -i inventories/hosts.yml 'kube_alpha:&agent' \
+  -m ansible.builtin.command \
+  -a 'systemctl is-active rke2-agent'
+```
+
+Inspect Kubernetes node conditions from a single control-plane host and filter by the `Ready` status:
+
+```bash
+ansible -i inventories/hosts.yml kube01 \
+  -m ansible.builtin.shell \
+  -a "kubectl get nodes --no-headers | awk '{print \$1, \$2}'"
+```
+
+Collect the current pod scheduling pressure across namespaces to identify hotspots:
+
+```bash
+ansible -i inventories/hosts.yml 'kube_alpha:&server' \
+  -m ansible.builtin.shell \
+  -a "kubectl get pods -A --field-selector=status.phase!=Running"
+```
+
+> **Tip:** Add `-b` when commands require privilege escalation and append `--limit <subset>` to further constrain the target
+> hosts.
+
 ## Verification
 
 After making changes to the playbooks or inventory, run the following commands from an activated virtual environment to ensure
