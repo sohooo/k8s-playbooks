@@ -31,4 +31,4 @@ kube05
 - **Cluster:** `ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --limit kube_alpha`
 - **Single host:** `ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --limit kube02`
 
-The maintenance playbook automatically distinguishes between control-plane and worker roles by checking the `controlplane` host variable (falling back to `kube_control_plane` for legacy inventories), so no additional helper groups are required. When creating new clusters, copy an existing section and adjust the hostnames. Keep the naming consistent to simplify filtering and monitoring.
+The maintenance playbook automatically distinguishes between control-plane and worker roles by checking the `controlplane` host variable, so no additional helper groups are required. When creating new clusters, copy an existing section and adjust the hostnames. Keep the naming consistent to simplify filtering and monitoring.
