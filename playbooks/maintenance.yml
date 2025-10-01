@@ -4,6 +4,8 @@
   become: true
   serial: 1
   any_errors_fatal: true  # Halt the play entirely if any task fails to allow manual debugging
+  vars:
+    kube_node_is_control_plane: "{{ controlplane | default(kube_control_plane) | default(false) | bool }}"
   environment:
     KUBECONFIG: /etc/rancher/rke2/rke2.yaml
     PATH: "/var/lib/rancher/rke2/bin:{{ ansible_env.PATH | default('/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin') }}"
@@ -12,7 +14,7 @@
       ansible.builtin.import_tasks: tasks/common/ensure_single_cluster.yml
 
     - name: Skip non-control-plane nodes for server maintenance
-      when: not (kube_control_plane | default(false) | bool)
+      when: not kube_node_is_control_plane
       ansible.builtin.meta: end_host
   tasks:
     - name: Run maintenance workflow for server nodes
@@ -58,6 +60,8 @@
   become: true
   serial: 1
   any_errors_fatal: true  # Halt the play entirely if any task fails to allow manual debugging
+  vars:
+    kube_node_is_control_plane: "{{ controlplane | default(kube_control_plane) | default(false) | bool }}"
   environment:
     KUBECONFIG: /etc/rancher/rke2/rke2.yaml
     PATH: "/var/lib/rancher/rke2/bin:{{ ansible_env.PATH | default('/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin') }}"
@@ -66,18 +70,32 @@
       ansible.builtin.import_tasks: tasks/common/ensure_single_cluster.yml
 
     - name: Skip control-plane nodes for agent maintenance
-      when: kube_control_plane | default(false) | bool
+      when: kube_node_is_control_plane
       ansible.builtin.meta: end_host
   tasks:
     - name: Determine available server delegates for this cluster
       ansible.builtin.set_fact:
         kube_cluster_server_candidates: >-
           {{
-            (hostvars | dict2items)
-            | selectattr('key', 'in', groups[kube_cluster] | default([]))
-            | selectattr('value.kube_control_plane', 'defined')
-            | selectattr('value.kube_control_plane')
-            | map(attribute='key')
+            (
+              (
+                (hostvars | dict2items)
+                | selectattr('key', 'in', groups[kube_cluster] | default([]))
+                | selectattr('value.controlplane', 'defined')
+                | selectattr('value.controlplane')
+                | map(attribute='key')
+              )
+              +
+              (
+                (hostvars | dict2items)
+                | selectattr('key', 'in', groups[kube_cluster] | default([]))
+                | selectattr('value.controlplane', 'undefined')
+                | selectattr('value.kube_control_plane', 'defined')
+                | selectattr('value.kube_control_plane')
+                | map(attribute='key')
+              )
+            )
+            | unique
             | list
           }}
 
@@ -85,7 +103,7 @@
       ansible.builtin.fail:
         msg: >-
           Unable to locate a control-plane host for {{ inventory_hostname }} in the {{ kube_cluster | default('undefined') }}
-          cluster. Ensure the inventory defines at least one server node with kube_control_plane: true.
+          cluster. Ensure the inventory defines at least one server node with controlplane=true.
       when: (kube_cluster_server_candidates | default([])) | length == 0
 
     - name: Determine kubectl delegate for agent nodes
