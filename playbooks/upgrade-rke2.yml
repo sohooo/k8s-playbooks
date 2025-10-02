@@ -1,0 +1,319 @@
+---
+- name: Upgrade RKE2 server nodes
+  hosts: all
+  become: true
+  serial: 1
+  any_errors_fatal: true
+  vars:
+    kube_node_is_control_plane: "{{ controlplane | default(false) | bool }}"
+    kube_rke2_service_name: "{{ 'rke2-server' if kube_node_is_control_plane else 'rke2-agent' }}"
+  environment:
+    KUBECONFIG: /etc/rancher/rke2/rke2.yaml
+    PATH: "/var/lib/rancher/rke2/bin:{{ ansible_env.PATH | default('/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin') }}"
+  pre_tasks:
+    - name: Validate cluster scope before upgrade
+      ansible.builtin.import_tasks: tasks/common/ensure_single_cluster.yml
+
+    - name: Skip non-control-plane nodes for server upgrade
+      when: not kube_node_is_control_plane
+      ansible.builtin.meta: end_host
+  tasks:
+    - name: Read target RKE2 version from release file
+      ansible.builtin.slurp:
+        src: /etc/rke2-release
+      register: rke2_release_file
+
+    - name: Extract target RKE2 version
+      ansible.builtin.set_fact:
+        rke2_target_version_semver: >-
+          {{
+            (
+              rke2_release_file.content
+              | b64decode
+              | regex_search('^v?([0-9]+\\.[0-9]+\\.[0-9]+)', '\\1', multiline=True)
+            )
+            | default('', true)
+          }}
+        rke2_target_version: >-
+          {{
+            'v' ~ rke2_target_version_semver
+            if (rke2_target_version_semver | length) > 0
+            else ''
+          }}
+
+    - name: Fail when target version is unavailable
+      ansible.builtin.fail:
+        msg: >-
+          Unable to determine the target RKE2 version from /etc/rke2-release on {{ inventory_hostname }}.
+      when: (rke2_target_version_semver | length) == 0
+
+    - name: Detect installed RKE2 version
+      ansible.builtin.command:
+        argv:
+          - /usr/local/bin/rke2
+          - --version
+      register: rke2_current_version_command
+      changed_when: false
+
+    - name: Extract installed RKE2 version
+      ansible.builtin.set_fact:
+        rke2_current_version_semver: >-
+          {{
+            (
+              rke2_current_version_command.stdout
+              | regex_search('^rke2 version v?([0-9]+\\.[0-9]+\\.[0-9]+)', '\\1', multiline=True)
+            )
+            | default('', true)
+          }}
+        rke2_current_version: >-
+          {{
+            'v' ~ rke2_current_version_semver
+            if (rke2_current_version_semver | length) > 0
+            else ''
+          }}
+
+    - name: Fail when installed version cannot be detected
+      ansible.builtin.fail:
+        msg: >-
+          Unable to determine the installed RKE2 version on {{ inventory_hostname }}.
+          Command output: {{ rke2_current_version_command.stdout | default('<empty>') }}
+      when: (rke2_current_version_semver | length) == 0
+
+    - name: Determine whether an upgrade is required
+      ansible.builtin.set_fact:
+        rke2_upgrade_required: >-
+          {{
+            (rke2_current_version_semver | length > 0)
+            and (rke2_target_version_semver | length > 0)
+            and (rke2_current_version_semver is ansible.builtin.version(rke2_target_version_semver, '<'))
+          }}
+
+    - name: Report when no upgrade is required
+      when: not (rke2_upgrade_required | bool)
+      ansible.builtin.debug:
+        msg: >-
+          RKE2 is already at the desired version ({{ rke2_current_version }}) on {{ inventory_hostname }}.
+
+    - name: Perform RKE2 upgrade workflow
+      when: rke2_upgrade_required | bool
+      block:
+        - name: Capture node scheduling state before upgrade
+          ansible.builtin.include_tasks:
+            file: tasks/node/get_cordon_status.yml
+
+        - name: Remember original scheduling state
+          ansible.builtin.set_fact:
+            kube_node_was_cordoned: "{{ kube_node_is_cordoned | default(false) | bool }}"
+
+        - name: Run Puppet agent prior to upgrade
+          ansible.builtin.import_tasks: tasks/common/puppet_agent.yml
+
+        - name: Ensure node is cordoned before draining workloads
+          when: not (kube_node_is_cordoned | default(false) | bool)
+          ansible.builtin.include_tasks:
+            file: tasks/node/cordon.yml
+
+        - name: Drain workloads from node before upgrade
+          ansible.builtin.include_tasks:
+            file: tasks/node/drain.yml
+
+        - name: Stop RKE2 services before upgrade
+          ansible.builtin.command:
+            argv:
+              - /usr/local/bin/rke2-killall.sh
+          register: rke2_killall_result
+          changed_when: rke2_killall_result.rc == 0
+
+        - name: Run RKE2 upgrade script
+          ansible.builtin.command:
+            argv:
+              - /usr/local/bin/rke2-upgrade-node.sh
+          register: rke2_upgrade_script_result
+          changed_when: rke2_upgrade_script_result.rc == 0
+
+        - name: Start RKE2 service after upgrade
+          ansible.builtin.service:
+            name: "{{ kube_rke2_service_name }}"
+            state: started
+
+        - name: Refresh node scheduling state after upgrade
+          ansible.builtin.include_tasks:
+            file: tasks/node/get_cordon_status.yml
+
+        - name: Restore scheduling state when node was previously schedulable
+          when: not (kube_node_was_cordoned | default(false) | bool)
+          ansible.builtin.include_tasks:
+            file: tasks/node/uncordon.yml
+
+- name: Upgrade RKE2 agent nodes
+  hosts: all
+  become: true
+  serial: 1
+  any_errors_fatal: true
+  vars:
+    kube_node_is_control_plane: "{{ controlplane | default(false) | bool }}"
+    kube_rke2_service_name: "{{ 'rke2-server' if kube_node_is_control_plane else 'rke2-agent' }}"
+  environment:
+    KUBECONFIG: /etc/rancher/rke2/rke2.yaml
+    PATH: "/var/lib/rancher/rke2/bin:{{ ansible_env.PATH | default('/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin') }}"
+  pre_tasks:
+    - name: Validate cluster scope before upgrade
+      ansible.builtin.import_tasks: tasks/common/ensure_single_cluster.yml
+
+    - name: Skip control-plane nodes for agent upgrade
+      when: kube_node_is_control_plane
+      ansible.builtin.meta: end_host
+  tasks:
+    - name: Determine available server delegates for this cluster
+      ansible.builtin.set_fact:
+        kube_cluster_server_candidates: >-
+          {{
+            (
+              (hostvars | dict2items)
+              | selectattr('key', 'in', groups[kube_cluster] | default([]))
+              | selectattr('value.controlplane', 'defined')
+              | selectattr('value.controlplane')
+              | map(attribute='key')
+            )
+            | unique
+            | list
+          }}
+
+    - name: Fail when no server delegate is available for the agent
+      ansible.builtin.fail:
+        msg: >-
+          Unable to locate a control-plane host for {{ inventory_hostname }} in the {{ kube_cluster | default('undefined') }} cluster.
+          Ensure the inventory defines at least one server node with controlplane=true.
+      when: (kube_cluster_server_candidates | default([])) | length == 0
+
+    - name: Determine kubectl delegate for agent nodes
+      ansible.builtin.set_fact:
+        kube_kubectl_delegate: "{{ kube_cluster_server_candidates[0] }}"
+      when: (kube_cluster_server_candidates | default([])) | length > 0
+
+    - name: Read target RKE2 version from release file
+      ansible.builtin.slurp:
+        src: /etc/rke2-release
+      register: rke2_release_file
+
+    - name: Extract target RKE2 version
+      ansible.builtin.set_fact:
+        rke2_target_version_semver: >-
+          {{
+            (
+              rke2_release_file.content
+              | b64decode
+              | regex_search('^v?([0-9]+\\.[0-9]+\\.[0-9]+)', '\\1', multiline=True)
+            )
+            | default('', true)
+          }}
+        rke2_target_version: >-
+          {{
+            'v' ~ rke2_target_version_semver
+            if (rke2_target_version_semver | length) > 0
+            else ''
+          }}
+
+    - name: Fail when target version is unavailable
+      ansible.builtin.fail:
+        msg: >-
+          Unable to determine the target RKE2 version from /etc/rke2-release on {{ inventory_hostname }}.
+      when: (rke2_target_version_semver | length) == 0
+
+    - name: Detect installed RKE2 version
+      ansible.builtin.command:
+        argv:
+          - /usr/local/bin/rke2
+          - --version
+      register: rke2_current_version_command
+      changed_when: false
+
+    - name: Extract installed RKE2 version
+      ansible.builtin.set_fact:
+        rke2_current_version_semver: >-
+          {{
+            (
+              rke2_current_version_command.stdout
+              | regex_search('^rke2 version v?([0-9]+\\.[0-9]+\\.[0-9]+)', '\\1', multiline=True)
+            )
+            | default('', true)
+          }}
+        rke2_current_version: >-
+          {{
+            'v' ~ rke2_current_version_semver
+            if (rke2_current_version_semver | length) > 0
+            else ''
+          }}
+
+    - name: Fail when installed version cannot be detected
+      ansible.builtin.fail:
+        msg: >-
+          Unable to determine the installed RKE2 version on {{ inventory_hostname }}.
+          Command output: {{ rke2_current_version_command.stdout | default('<empty>') }}
+      when: (rke2_current_version_semver | length) == 0
+
+    - name: Determine whether an upgrade is required
+      ansible.builtin.set_fact:
+        rke2_upgrade_required: >-
+          {{
+            (rke2_current_version_semver | length > 0)
+            and (rke2_target_version_semver | length > 0)
+            and (rke2_current_version_semver is ansible.builtin.version(rke2_target_version_semver, '<'))
+          }}
+
+    - name: Report when no upgrade is required
+      when: not (rke2_upgrade_required | bool)
+      ansible.builtin.debug:
+        msg: >-
+          RKE2 is already at the desired version ({{ rke2_current_version }}) on {{ inventory_hostname }}.
+
+    - name: Perform RKE2 upgrade workflow
+      when: rke2_upgrade_required | bool
+      block:
+        - name: Capture node scheduling state before upgrade
+          ansible.builtin.include_tasks:
+            file: tasks/node/get_cordon_status.yml
+
+        - name: Remember original scheduling state
+          ansible.builtin.set_fact:
+            kube_node_was_cordoned: "{{ kube_node_is_cordoned | default(false) | bool }}"
+
+        - name: Run Puppet agent prior to upgrade
+          ansible.builtin.import_tasks: tasks/common/puppet_agent.yml
+
+        - name: Ensure node is cordoned before draining workloads
+          when: not (kube_node_is_cordoned | default(false) | bool)
+          ansible.builtin.include_tasks:
+            file: tasks/node/cordon.yml
+
+        - name: Drain workloads from node before upgrade
+          ansible.builtin.include_tasks:
+            file: tasks/node/drain.yml
+
+        - name: Stop RKE2 services before upgrade
+          ansible.builtin.command:
+            argv:
+              - /usr/local/bin/rke2-killall.sh
+          register: rke2_killall_result
+          changed_when: rke2_killall_result.rc == 0
+
+        - name: Run RKE2 upgrade script
+          ansible.builtin.command:
+            argv:
+              - /usr/local/bin/rke2-upgrade-node.sh
+          register: rke2_upgrade_script_result
+          changed_when: rke2_upgrade_script_result.rc == 0
+
+        - name: Start RKE2 service after upgrade
+          ansible.builtin.service:
+            name: "{{ kube_rke2_service_name }}"
+            state: started
+
+        - name: Refresh node scheduling state after upgrade
+          ansible.builtin.include_tasks:
+            file: tasks/node/get_cordon_status.yml
+
+        - name: Restore scheduling state when node was previously schedulable
+          when: not (kube_node_was_cordoned | default(false) | bool)
+          ansible.builtin.include_tasks:
+            file: tasks/node/uncordon.yml
