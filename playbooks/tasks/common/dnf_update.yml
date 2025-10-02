@@ -6,9 +6,3 @@
     update_cache: true
     update_only: true
   register: dnf_update_result
-
-- name: Report updated packages
-  ansible.builtin.debug:
-    msg: >-
-      Updated packages: {{ (dnf_update_result.results | default([])) | map(attribute='name') | list | join(', ') }}
-  when: dnf_update_result.changed and (dnf_update_result.results | default([])) | length > 0
