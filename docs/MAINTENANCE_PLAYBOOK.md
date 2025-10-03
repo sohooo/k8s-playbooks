@@ -1,53 +1,39 @@
-# Maintenance Playbook Reference
+# Referenz zum Wartungs-Playbook
 
-The `playbooks/maintenance.yml` file is the primary entry point for scheduled upkeep of the RKE2 clusters. It contains two plays that share the same maintenance block while using the inventory `controlplane` host variable to steer execution.
+Die Datei `playbooks/maintenance.yml` ist der zentrale Einstiegspunkt für die geplante Wartung der RKE2-Cluster. Sie enthält zwei Plays, die denselben Wartungsblock nutzen und über die Host-Variable `controlplane` steuern, welche Aufgaben greifen.
 
-## Execution order
+## Ablaufreihenfolge
 
-1. **Server play** – Targets every host in the inventory but immediately skips nodes without `controlplane=true`. With `serial: 1` the play finishes maintenance on one server before moving on to the next.
-2. **Agent play** – Runs the same sequence for worker nodes. Each host skips itself when `controlplane=true` and discovers the appropriate server delegate by intersecting its cluster membership with hosts that expose the `controlplane` flag.
+1. **Server-Play** – Ziel ist jeder Host im Inventar, allerdings werden Knoten ohne `controlplane=true` sofort übersprungen. Durch `serial: 1` wird die Wartung pro Server nacheinander abgeschlossen.
+2. **Agent-Play** – Führt die gleiche Sequenz für Worker-Knoten aus. Jeder Host überspringt sich selbst, sobald `controlplane=true` gesetzt ist, und findet den passenden Delegations-Server, indem er seine Cluster-Mitgliedschaft mit Hosts kreuzt, die das `controlplane`-Flag tragen.
 
-The separation into two plays keeps the orchestration logic obvious while the shared host variable avoids maintaining parallel groups in the inventory.
+Die Aufteilung in zwei Plays hält die Orchestrierungslogik nachvollziehbar, während die geteilte Host-Variable den Pflegeaufwand für parallele Inventargruppen erspart.
 
-## Task sequence
+...
+Jede Befehlsaufgabe besitzt explizite `failed_when`-Regeln, sodass unerwartete Rückgabewerte sofort sichtbar werden.
 
-Both plays embed the same maintenance block directly in the playbook so that the workflow remains visible without chasing extra task files. The block executes the following steps:
+> **Delegationshinweis:** RKE2-Worker-Knoten liefern weder `kubectl` noch eine KUBECONFIG mit. Das Playbook delegiert daher sämtliche Kubernetes-Kommandos an einen Control-Plane-Host desselben Clusters, sobald der aktuelle Zielhost das Werkzeug nicht bereitstellt. Dadurch bleibt der Wartungs-Workflow auf allen Knotentypen funktionsfähig, ohne die spezifische Scheduling-Logik zu verlieren.
 
-1. **Check cordon status** – Captures whether the node is already cordoned to avoid double-draining.
-2. **Drain if required** – Runs `kubectl drain` only when the node was schedulable.
-3. **Puppet maintenance** – Imports [`common/puppet_agent.yml`](../playbooks/tasks/common/puppet_agent.yml) to run the Puppet agent in test mode and fail on unexpected issues.
-4. **OS updates** – Imports [`common/dnf_update.yml`](../playbooks/tasks/common/dnf_update.yml) to upgrade packages when updates are available.
-5. **Reboot** – Imports [`common/reboot.yml`](../playbooks/tasks/common/reboot.yml) to restart the host and wait for it to come back online.
-6. **Post-maintenance cordon check** – Confirms whether the node is still cordoned.
-7. **Uncordon if needed** – Runs `kubectl uncordon` when the previous check reports that the node remains unschedulable.
+## Workflow erweitern
 
-Each command task has explicit `failed_when` rules so that unexpected return codes surface immediately.
+- Ergänze neue Schritte im gemeinsamen Wartungsblock in `playbooks/maintenance.yml`, damit Server- und Agent-Plays synchron bleiben.
+- Für optionale Schritte empfiehlt sich ein `block` mit klaren Bedingungen, damit das Verhalten nachvollziehbar bleibt.
+- Benötigt eine neue Wartungsaktion zusätzliche Variablen, dokumentiere sie in der Task-Datei und lege nach Möglichkeit Default-Werte in `group_vars` fest.
 
-> **Delegation note:** RKE2 worker nodes do not ship with `kubectl` or a KUBECONFIG. The playbook therefore
-> delegates every Kubernetes command to a control-plane host within the same cluster whenever the current
-> target lacks the tooling. This keeps the maintenance workflow functional across all node types while
-> preserving the node-specific scheduling logic.
+Die Haupt-Playbook-Datei bleibt so schlank, während die eigentliche Umsetzung in gemeinsamen Task-Dateien die Lesbarkeit erhält und Erweiterungen erleichtert.
 
-## Extending the workflow
+## Störungen beim Drain beheben
 
-- Add new steps to the maintenance block in `playbooks/maintenance.yml` so the server and agent plays stay in sync.
-- For optional steps, prefer wrapping the included tasks in `block` statements with clear conditionals so the behaviour remains discoverable.
-- When a new maintenance action requires additional variables, document them in the task file and consider providing defaults in `group_vars`.
+`kubectl drain` kann auf unbestimmte Zeit warten, wenn Pods sich nicht vertreiben lassen. Das Playbook stellt daher mehrere Variablen bereit, um das Verhalten anzupassen:
 
-Keeping the main playbook compact and delegating the implementation to a shared task file preserves readability while making it straightforward to add new capabilities.
+- `kube_drain_include_daemonsets` (Standard: `false`) – Bei `true` setzt der Befehl `--ignore-daemonsets=false` und wartet dadurch auf Pods, die von DaemonSets verwaltet werden. DaemonSets werden typischerweise sofort neu erstellt; der Drain wirkt daher blockiert, bis das DaemonSet vorher skaliert oder deaktiviert wird.
+- `kube_drain_delete_emptydir_data` (Standard: `true`) – Aktiviert `--delete-emptydir-data`, sodass Pods mit `emptyDir`-Volumes beendet werden, anstatt den Drain zu blockieren.
+- `kube_drain_timeout` (Standard: `10m`) – Mapped auf das native `--timeout` von `kubectl drain` und bricht die Aktion ab, sobald die Karenz abläuft. Die Angabe benötigt eine Einheit (z. B. `5m`, `30s`).
+- `kube_kubectl_command_timeout` (Standard: `900`) – Begrenzt die Laufzeit aller delegierten `kubectl`-Aufrufe, damit Ansible-Tasks nicht unendlich laufen, wenn der Client hängt oder die Verbindung verliert.
 
-## Troubleshooting stuck drains
+Wenn ein Drain hängen bleibt oder abbricht, helfen diese Schritte:
 
-`kubectl drain` can wait indefinitely when pods refuse eviction. The playbook now exposes several variables to tune that behaviour:
-
-- `kube_drain_include_daemonsets` (default: `false`) – When set to `true` the command renders `--ignore-daemonsets=false`, which forces the drain to wait for daemonset-managed pods. Because daemonsets are typically recreated immediately, the drain will appear to hang unless the daemonset is scaled to zero first.
-- `kube_drain_delete_emptydir_data` (default: `true`) – Enables `--delete-emptydir-data` so pods using `emptyDir` volumes are terminated instead of blocking the drain.
-- `kube_drain_timeout` (default: `10m`) – Maps to the native `--timeout` flag on `kubectl drain` to abort the operation when the grace period expires. The timeout must include a unit (e.g. `5m`, `30s`).
-- `kube_kubectl_command_timeout` (default: `900`) – Caps the runtime of every delegated `kubectl` invocation to prevent the Ansible task itself from running forever if the client hangs or loses connectivity.
-
-When a drain times out or hangs, take the following recovery steps:
-
-1. Inspect which pods are blocking the drain with `kubectl get pods -A --field-selector spec.nodeName=<node> -o wide`. Daemonset pods must be deleted by scaling the owning daemonset to zero or by temporarily disabling the drain option that includes them.
-2. Check for pod disruption budgets (`kubectl get pdb -A`) that may prevent voluntary disruption. Temporarily raise their `maxUnavailable` or delete them while maintenance is in progress.
-3. If the playbook aborted midway, run `kubectl uncordon <node>` to restore scheduling and return the cluster to a healthy state before retrying.
-4. After resolving the blockers, rerun the maintenance play. The drain task will respect the configured timeouts and fail fast when pods are still preventing eviction, allowing manual intervention without leaving the node cordoned indefinitely.
+1. Mit `kubectl get pods -A --field-selector spec.nodeName=<node> -o wide` prüfen, welche Pods blockieren. DaemonSet-Pods müssen gelöscht werden, indem das zugehörige DaemonSet auf null skaliert oder die Drain-Option, die sie einschließt, temporär deaktiviert wird.
+2. Auf Pod-Disruption-Budgets achten (`kubectl get pdb -A`), die freiwillige Unterbrechungen verhindern können. Erhöhe deren `maxUnavailable` kurzfristig oder entferne sie, solange die Wartung läuft.
+3. Wurde das Playbook in der Mitte abgebrochen, `kubectl uncordon <node>` ausführen, um Scheduling wieder zu ermöglichen und den Cluster zu stabilisieren, bevor ein neuer Versuch startet.
+4. Nach der Fehlerbehebung das Wartungs-Play erneut ausführen. Die Drain-Aufgabe respektiert die konfigurierten Timeouts und schlägt schnell fehl, wenn Pods weiterhin blockieren, sodass manuelle Eingriffe möglich bleiben, ohne den Knoten dauerhaft zu sperren.

@@ -1,15 +1,15 @@
-# Inventory Conventions
+# Inventar-Konventionen
 
-The repository ships with a static inventory located at [`inventories/hosts.ini`](../inventories/hosts.ini). It is organised to make individual clusters easy to target while keeping per-host metadata minimal.
+Das Repository liefert ein statisches Inventar unter [`inventories/hosts.ini`](../inventories/hosts.ini). Die Struktur erleichtert das gezielte Ansprechen einzelner Cluster und hält die pro Host gepflegten Metadaten schlank.
 
-## Group layout
+## Gruppenaufbau
 
-- Each `kube_<name>` group represents a single RKE2 cluster.
-- Every cluster sets the `kube_cluster` variable so plays can enforce that maintenance only targets one cluster at a time.
-- Each cluster lists every node directly under its group while setting `kube_cluster` so host variables inherit the cluster name.
-- Control-plane nodes inside a cluster set `controlplane=true`. Worker nodes omit the flag.
+- Jede Gruppe `kube_<name>` steht für einen einzelnen RKE2-Cluster.
+- Jeder Cluster setzt die Variable `kube_cluster`, damit Plays sicherstellen können, dass Wartungsvorgänge immer nur einen Cluster betreffen.
+- Jeder Cluster listet alle Knoten direkt unter seiner Gruppe auf und vererbt so `kube_cluster` an die Hosts.
+- Control-Plane-Knoten setzen innerhalb des Clusters `controlplane=true`. Worker-Knoten lassen die Variable weg.
 
-Example excerpt:
+Beispielausschnitt:
 
 ```ini
 [all:children]
@@ -26,9 +26,9 @@ kube04
 kube05
 ```
 
-## Targeting hosts
+## Hosts ansteuern
 
 - **Cluster:** `ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --limit kube_alpha`
-- **Single host:** `ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --limit kube02`
+- **Einzelner Host:** `ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --limit kube02`
 
-The maintenance playbook automatically distinguishes between control-plane and worker roles by checking the `controlplane` host variable, so no additional helper groups are required. When creating new clusters, copy an existing section and adjust the hostnames. Keep the naming consistent to simplify filtering and monitoring.
+Das Wartungs-Playbook unterscheidet automatisch zwischen Control-Plane- und Worker-Rollen, indem es die Host-Variable `controlplane` prüft. Zusätzliche Hilfsgruppen sind daher nicht nötig. Beim Anlegen neuer Cluster genügt es, einen vorhandenen Abschnitt zu kopieren und die Hostnamen anzupassen. Eine konsistente Benennung erleichtert Filterung und Monitoring.

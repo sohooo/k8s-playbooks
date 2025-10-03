@@ -1,65 +1,46 @@
-# Ansible Development Tips
+# Ansible-Tipps für die Entwicklung
 
-These techniques help you experiment safely, iterate quickly, and diagnose unexpected
-behaviour when working on the playbooks in this repository.
+Diese Techniken helfen dir, gefahrlos zu experimentieren, schneller zu iterieren und unerwartetes Verhalten zu analysieren, wenn du an den Playbooks in diesem Repository arbeitest.
 
-## Safe preview runs
+## Sichere Probeläufe
 
-- **Syntax validation** – Always start with a parse check to catch indentation or YAML
-  issues before connecting to hosts:
+- **Syntax validieren** – Starte immer mit einem Parse-Check, um Einrückungs- oder YAML-Fehler zu finden, bevor Hosts angesprochen werden:
   ```bash
   ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --syntax-check
   ```
-- **No-op dry runs** – Use check mode to review the planned changes without executing
-  them. Combine with a host limit to keep the output focused:
+- **No-Op-Trockenläufe** – Nutze den Check-Mode, um geplante Änderungen ohne Ausführung zu sehen. In Kombination mit `--limit` bleibt die Ausgabe übersichtlich:
   ```bash
   ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml \
     --check --limit kube_alpha
   ```
-- **Diff output** – Add `--diff` when you want to inspect the file or template
-  differences that Ansible would apply during a real run.
+- **Diff-Ausgabe** – Ergänze `--diff`, wenn du Datei- oder Template-Änderungen einsehen möchtest, die Ansible in einem echten Lauf anwenden würde.
 
-## Targeting specific tasks
+## Spezifische Aufgaben ansteuern
 
-- **Run only tagged steps** – Tag long-running or optional tasks and then execute just
-  those pieces with `--tags some_tag`. Exclude noisy sections with `--skip-tags`.
-- **Resume from a task** – After a failed run, restart at the next relevant task without
-  repeating earlier work using `--start-at-task "Task name"`.
-- **List affected hosts and tasks** – Combine `--list-hosts`, `--list-tasks`, or
-  `--list-tags` with other flags to confirm what would run before touching infrastructure.
+- **Nur getaggte Schritte ausführen** – Versehen lange oder optionale Tasks mit Tags und führe sie bei Bedarf mit `--tags some_tag` aus. Unterdrücke laute Abschnitte mit `--skip-tags`.
+- **An einer Aufgabe fortsetzen** – Nach einem fehlgeschlagenen Lauf kannst du mit `--start-at-task "Task name"` an der nächsten relevanten Aufgabe weiterarbeiten, ohne bereits erledigte Schritte zu wiederholen.
+- **Betroffene Hosts und Tasks listen** – Kombiniere `--list-hosts`, `--list-tasks` oder `--list-tags` mit anderen Flags, um vorab zu prüfen, was ausgeführt würde.
 
-## Debugging output
+## Debug-Ausgabe
 
-- **Increase verbosity** – Add `-v`, `-vv`, or `-vvv` to see module arguments,
-  templated values, and SSH details. Reserve `-vvvv` for deep SSH debugging.
-- **Prompt before each task** – Use `--step` to confirm execution one task at a time when
-  investigating complex logic.
-- **Capture task context** – Insert temporary `debug:` tasks to print variables. For
-  large structures, set `var` so Ansible formats the output cleanly:
+- **Verbosity erhöhen** – Verwende `-v`, `-vv` oder `-vvv`, um Modulargumente, templated Werte und SSH-Details zu sehen. `-vvvv` sollte speziellen SSH-Analysen vorbehalten sein.
+- **Vor jedem Task bestätigen** – Mit `--step` bestätigst du jede Aufgabe einzeln und kannst komplexe Logik Schritt für Schritt untersuchen.
+- **Task-Kontext erfassen** – Füge temporäre `debug:`-Tasks ein, um Variablen auszugeben. Für große Strukturen sorgt `var` dafür, dass Ansible das Format automatisch aufbereitet:
   ```yaml
-  - name: Inspect host configuration
+  - name: Host-Konfiguration prüfen
     ansible.builtin.debug:
       var: hostvars[inventory_hostname]
   ```
 
-## Local iteration tips
+## Tipps für die lokale Iteration
 
-- **Reuse the same Python virtualenv** – Activate the tooling environment (`source
-  .venv/bin/activate`) to ensure the correct Ansible version and collections are loaded.
-- **Cache facts during experiments** – Fact gathering can be slow on large inventories.
-  Enable the JSON fact cache by exporting `ANSIBLE_FACT_PATH` to a writable directory and
-  adding `fact_caching=jsonfile` in `ansible.cfg` while iterating.
-- **Validate variable precedence** – When troubleshooting overrides, run
-  `ansible-inventory ... --host <hostname>` to inspect the merged variables that a host
-  receives.
+- **Gleiche virtuelle Umgebung wiederverwenden** – Aktiviere die Tooling-Umgebung (`source .venv/bin/activate`), damit die richtige Ansible-Version und benötigte Collections geladen werden.
+- **Fakten während Tests cachen** – Das Sammeln von Fakten kann bei großen Inventaren dauern. Setze `ANSIBLE_FACT_PATH` auf ein beschreibbares Verzeichnis und aktiviere `fact_caching=jsonfile` in `ansible.cfg`, um die Ergebnisse während der Iteration zwischenzuspeichern.
+- **Variablen-Priorität validieren** – Bei der Fehlersuche rund um Überschreibungen hilft `ansible-inventory ... --host <hostname>`, um die zusammengeführten Variablen eines Hosts anzuzeigen.
 
-## Post-run analysis
+## Analyse nach dem Lauf
 
-- **Review the recap** – Pay attention to the `changed` and `failed` counts per host. A
-  host stuck in `changed=0` during check mode is a sign that nothing would happen in a
-  real run.
-- **Persist logs** – Pipe output to `tee` (`ansible-playbook ... | tee logs/maintenance.log`)
-  so you can revisit the details or share them with the team.
+- **Recap auswerten** – Achte auf `changed`- und `failed`-Zähler pro Host. Wenn ein Host im Check-Mode dauerhaft `changed=0` zeigt, würde in einem echten Lauf nichts passieren.
+- **Logs speichern** – Leite Ausgaben nach `tee` um (`ansible-playbook ... | tee logs/maintenance.log`), damit du Details später prüfen oder mit dem Team teilen kannst.
 
-Use these patterns together to de-risk changes, gather the information you need, and keep
-runs predictable across environments.
+Setze diese Muster kombiniert ein, um Änderungen abzusichern, die benötigten Informationen zu sammeln und reproduzierbare Abläufe zu gewährleisten.
