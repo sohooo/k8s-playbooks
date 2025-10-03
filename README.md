@@ -1,87 +1,113 @@
-# RKE2 Cluster Playbooks
+# RKE2-Cluster-Playbooks
 
-This repository provides Ansible resources for operating Rancher Kubernetes Engine 2 (RKE2) clusters. It currently includes:
+## Schnellstart
 
-- A readable INI inventory that organises hosts per cluster while using host variables to distinguish control-plane nodes.
-- A rolling maintenance playbook that drains, updates, reboots, and uncordons each host one at a time, ensuring control-plane
-  nodes are serviced before workers.
+### Einrichtung
+1. Repository klonen und in das Verzeichnis wechseln:
+   ```bash
+git clone git@github.com:your-org/k8s-playbooks.git
+cd k8s-playbooks
+```
+2. Lokale Python-Umgebung einrichten und aktivieren:
+   ```bash
+./scripts/setup-ansible.sh
+source .venv/bin/activate
+```
+3. Installation überprüfen:
+   ```bash
+ansible --version
+ansible-lint --version
+```
 
-## Repository layout
+### Beispiele
+- Inventar visualisieren:
+  ```bash
+ansible-inventory -i inventories/hosts.ini --graph
+```
+- Wartung für einen Cluster als Trockenlauf ausführen:
+  ```bash
+ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --limit kube_alpha --check
+```
+- Wartung für einen einzelnen Host durchführen:
+  ```bash
+ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --limit kube02
+```
+
+## Repository-Layout
 
 ```
 .
-├── docs/                     # Extended documentation and onboarding material
+├── docs/                     # Ausführliche Dokumentation und Onboarding-Material
 ├── inventories/
-│   └── hosts.ini             # Static inventory for the managed clusters
+│   └── hosts.ini             # Statisches Inventar für die verwalteten Cluster
 ├── playbooks/
-│   ├── maintenance.yml       # Entry point for the maintenance workflow
+│   ├── maintenance.yml       # Einstiegspunkt für den Wartungs-Workflow
 │   └── tasks/
-│       └── common/           # Re-usable task snippets for maintenance actions
+│       └── common/           # Wiederverwendbare Aufgabenbausteine für Wartungsaktionen
 └── scripts/
-    └── setup-ansible.sh      # Helper script to create the tooling virtual environment
+    └── setup-ansible.sh      # Hilfsskript zum Einrichten der Tooling-Umgebung
 ```
 
-See [`docs/README.md`](docs/README.md) for deep dives into the playbook internals, inventory conventions, and onboarding steps.
+Weiterführende Informationen finden sich in [`docs/README.md`](docs/README.md).
 
-## Requirements
+## Anforderungen
 
-- Ansible 2.12+ (tested syntax)
-- Access to the target nodes with privilege escalation (`become`)
-- `kubectl` available on control-plane nodes (worker nodes delegate Kubernetes operations to a
-  control-plane host)
+- Ansible 2.12+ (getestete Syntax)
+- Zugriff auf die Zielknoten mit Rechten zur Privileg-Erhöhung (`become`)
+- `kubectl` auf Control-Plane-Knoten verfügbar (Worker delegieren Kubernetes-Operationen an einen Control-Plane-Host)
 
-## Local development setup
+## Playbooks im Überblick
 
-Set up a local Python virtual environment and install Ansible along with the linting tools used by the repository by running the
-helper script:
+- `playbooks/maintenance.yml` – führt einen rollierenden Wartungsablauf pro Knoten durch (Drain, Update, Reboot, Uncordon) und priorisiert Control-Plane-Knoten.
+- `playbooks/upgrade-rke2.yml` – aktualisiert RKE2-Server- und Agent-Knoten auf die Version aus `/etc/rke2-release`, inklusive Drain/Uncordon-Logik und Service-Neustarts.
+
+## Lokale Entwicklungsumgebung
+
+Richte eine lokale Python-Umgebung ein und installiere Ansible sowie die genutzten Linting-Tools mit dem Hilfsskript:
 
 ```bash
 ./scripts/setup-ansible.sh
 source .venv/bin/activate
 ```
 
-> The script creates a `.venv` directory in the repository by default. You can change the location by setting the `VENV_DIR`
-> environment variable before running it.
+> Das Skript erzeugt standardmäßig ein `.venv`-Verzeichnis im Repository. Über die Umgebungsvariable `VENV_DIR` lässt sich ein alternativer Pfad festlegen.
 
-Confirm the installation succeeded:
+Überprüfe anschließend die Installation:
 
 ```bash
 ansible --version
 ansible-lint --version
 ```
 
-> **Tip:** Activate the virtual environment (`source .venv/bin/activate`) in every new shell before running the commands below so
-> that the installed tooling is available.
+> **Tipp:** Aktiviere die virtuelle Umgebung (`source .venv/bin/activate`) in jeder neuen Shell, damit die installierten Werkzeuge verfügbar sind.
 
-## Usage
+## Nutzung
 
-Preview the inventory graph:
+Inventargraph ansehen:
 
 ```bash
 ansible-inventory -i inventories/hosts.ini --graph
 ```
 
-Run the maintenance workflow against a single cluster:
+Wartungs-Workflow für einen einzelnen Cluster starten:
 
 ```bash
 ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --limit kube_alpha
 ```
 
-You can also target an individual host or a subset of node types:
+Einen spezifischen Host oder Knotentyp ansteuern:
 
 ```bash
 ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --limit kube02
 ```
 
-> **Note:** Each play runs with `serial: 1`, ensuring maintenance actions complete on one node before moving on to the next.
+> **Hinweis:** Die Plays laufen mit `serial: 1`, sodass die Wartung jeweils nur einen Knoten gleichzeitig betrifft.
 
-### Running ad-hoc commands
+### Ad-hoc-Kommandos ausführen
 
-Use Ansible ad-hoc commands for quick spot checks or remediation steps without running the full maintenance playbook. The
-examples below assume the provided inventory (`inventories/hosts.ini`) and demonstrate common tasks for an RKE2 cluster. Adjust
-the `--limit` values to match the hosts you want to target.
+Mit Ansible-Ad-hoc-Kommandos lassen sich schnelle Prüfungen oder Eingriffe ohne kompletten Playbook-Lauf durchführen. Die Beispiele nutzen das Inventar `inventories/hosts.ini` und zeigen typische Aufgaben für einen RKE2-Cluster. Passe `--limit` an, um die Zielhosts einzugrenzen.
 
-Check the Kubernetes control-plane versions by running `kubectl` on every server node in the `kube_alpha` cluster:
+Kubernetes-Versionen der Control-Plane-Knoten prüfen:
 
 ```bash
 ansible -i inventories/hosts.ini kube_alpha \
@@ -90,7 +116,7 @@ ansible -i inventories/hosts.ini kube_alpha \
   -a 'kubectl version --short'
 ```
 
-Confirm that the RKE2 services are healthy on control-plane and worker nodes:
+RKE2-Dienste auf Control-Plane- und Worker-Knoten verifizieren:
 
 ```bash
 ansible -i inventories/hosts.ini kube_alpha \
@@ -104,7 +130,7 @@ ansible -i inventories/hosts.ini kube_alpha \
   -a 'systemctl is-active rke2-agent'
 ```
 
-Inspect Kubernetes node conditions from a single control-plane host and filter by the `Ready` status:
+Knotenstatus auf einem Control-Plane-Host anzeigen und nach `Ready` filtern:
 
 ```bash
 ansible -i inventories/hosts.ini kube_alpha \
@@ -113,7 +139,7 @@ ansible -i inventories/hosts.ini kube_alpha \
   -a "kubectl get nodes --no-headers | awk '{print \$1, \$2}'"
 ```
 
-Collect the current pod scheduling pressure across namespaces to identify hotspots:
+Pod-Scheduling-Druck clusterweit analysieren:
 
 ```bash
 ansible -i inventories/hosts.ini kube_alpha \
@@ -122,20 +148,19 @@ ansible -i inventories/hosts.ini kube_alpha \
   -a "kubectl get pods -A --field-selector=status.phase!=Running"
 ```
 
-> **Tip:** Add `-b` when commands require privilege escalation and adjust `--limit` to narrow the target hosts.
+> **Tipp:** Ergänze `-b`, wenn Kommandos Privileg-Erhöhung erfordern, und passe `--limit` an, um die Zielhosts einzugrenzen.
 
-## Verification
+## Verifikation
 
-After making changes to the playbooks or inventory, run the following commands from an activated virtual environment to ensure
-the content remains valid:
+Nach Änderungen an Playbooks oder Inventar sollten folgende Kommandos in einer aktivierten virtuellen Umgebung ausgeführt werden:
 
 ```bash
-# Validate the inventory loads correctly
+# Inventar-Ladevorgang prüfen
 ansible-inventory -i inventories/hosts.ini --graph
 
-# Lint the playbook content
+# Playbook-Inhalte linten
 ansible-lint playbooks/maintenance.yml
 
-# Perform a syntax check without connecting to any hosts
+# Syntax-Check ohne Host-Verbindungen
 ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --syntax-check
 ```
