@@ -5,7 +5,8 @@ This repository provides Ansible resources for operating Rancher Kubernetes Engi
 - A readable INI inventory that organises hosts per cluster while using host variables to distinguish control-plane nodes.
 - A rolling maintenance playbook that drains, updates, reboots, and uncordons each host one at a time, ensuring control-plane
   nodes are serviced before workers.
-- A GPU labelling playbook that detects NVIDIA hardware on each node and applies a `gpu=on` Kubernetes label when present.
+- A GPU labelling playbook that detects NVIDIA hardware on each node and applies `gpu=on` or `gpu=off` Kubernetes labels so
+  every node is consistently marked for GPU scheduling frameworks such as [HAMi](https://github.com/Project-HAMi/HAMi).
 
 ## Repository layout
 
@@ -77,7 +78,8 @@ ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --limit kube
 
 > **Note:** Each play runs with `serial: 1`, ensuring maintenance actions complete on one node before moving on to the next.
 
-Apply the GPU label to nodes that contain NVIDIA devices:
+Apply the GPU labels so that every node advertises whether a GPU is available. These labels are required when integrating with
+[HAMi](https://github.com/Project-HAMi/HAMi).
 
 ```bash
 ansible-playbook -i inventories/hosts.ini playbooks/label-gpu-nodes.yml --limit kube_alpha
