@@ -6,7 +6,7 @@
       - kubectl
       - uncordon
       - "{{ kube_node_name | default(inventory_hostname) }}"
-  delegate_to: "{{ kube_kubectl_delegate | default(inventory_hostname) }}"
+  delegate_to: "{{ kube_kubectl_delegate }}"
   register: kube_node_uncordon_result
   changed_when: true
   failed_when: kube_node_uncordon_result.rc != 0

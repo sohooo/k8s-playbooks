@@ -12,37 +12,8 @@
     - name: Validate cluster scope before labeling
       ansible.builtin.import_tasks: tasks/common/ensure_single_cluster.yml
 
-    - name: Gather available server delegates for this cluster
-      ansible.builtin.set_fact:
-        kube_cluster_server_candidates: >-
-          {{
-            (
-              (hostvars | dict2items)
-              | selectattr('key', 'in', groups[kube_cluster] | default([]))
-              | selectattr('value.controlplane', 'defined')
-              | selectattr('value.controlplane')
-              | map(attribute='key')
-            )
-            | unique
-            | list
-          }}
-      when: not kube_node_is_control_plane
-
-    - name: Fail when no server delegate is available for this cluster
-      ansible.builtin.fail:
-        msg: >-
-          Unable to locate a control-plane host for {{ inventory_hostname }} in the {{ kube_cluster | default('undefined') }}
-          cluster. Ensure the inventory defines at least one server node with controlplane=true.
-      when:
-        - not kube_node_is_control_plane
-        - (kube_cluster_server_candidates | default([])) | length == 0
-
-    - name: Select kubectl delegate for worker nodes
-      ansible.builtin.set_fact:
-        kube_kubectl_delegate: "{{ kube_cluster_server_candidates[0] }}"
-      when:
-        - not kube_node_is_control_plane
-        - (kube_cluster_server_candidates | default([])) | length > 0
+    - name: Select kubectl delegate for this cluster
+      ansible.builtin.import_tasks: tasks/common/select_kubectl_delegate.yml
 
   tasks:
     - name: Count NVIDIA devices with lspci
@@ -69,7 +40,7 @@
           - "{{ kube_node_name | default(inventory_hostname) }}"
           - -o
           - jsonpath={.metadata.labels.gpu}
-      delegate_to: "{{ kube_kubectl_delegate | default(inventory_hostname) }}"
+      delegate_to: "{{ kube_kubectl_delegate }}"
       register: kube_node_gpu_label_result
       changed_when: false
       failed_when: kube_node_gpu_label_result.rc != 0
@@ -84,7 +55,7 @@
           - "{{ kube_node_name | default(inventory_hostname) }}"
           - gpu=on
           - --overwrite
-      delegate_to: "{{ kube_kubectl_delegate | default(inventory_hostname) }}"
+      delegate_to: "{{ kube_kubectl_delegate }}"
       register: kube_node_gpu_label_apply_result
       changed_when: true
       failed_when: kube_node_gpu_label_apply_result.rc != 0
@@ -100,7 +71,7 @@
           - "{{ kube_node_name | default(inventory_hostname) }}"
           - gpu=off
           - --overwrite
-      delegate_to: "{{ kube_kubectl_delegate | default(inventory_hostname) }}"
+      delegate_to: "{{ kube_kubectl_delegate }}"
       register: kube_node_gpu_label_remove_result
       changed_when: true
       failed_when: kube_node_gpu_label_remove_result.rc != 0

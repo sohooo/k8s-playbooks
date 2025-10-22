@@ -1,5 +1,6 @@
 ---
-- ansible.builtin.import_tasks: rke2_service_facts.yml
+- name: Gather RKE2 service facts before restart
+  ansible.builtin.import_tasks: rke2_service_facts.yml
 
 - name: Restart RKE2 service
   ansible.builtin.service:
