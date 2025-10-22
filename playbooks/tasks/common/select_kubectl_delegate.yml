@@ -1,0 +1,52 @@
+---
+- name: Validate kubectl delegate configuration
+  ansible.builtin.assert:
+    that:
+      - kube_control_plane_group is defined
+      - (groups[kube_control_plane_group] | default([])) | length > 0
+    fail_msg: >-
+      Unable to determine the control-plane group for {{ kube_cluster | default('undefined') }}.
+      Ensure kube_control_plane_group is defined and contains at least one host.
+  run_once: true
+
+- name: Probe kubectl delegate candidates
+  ansible.builtin.wait_for_connection:
+    timeout: "{{ kube_kubectl_delegate_wait_timeout | default(10) }}"
+  loop: "{{ groups[kube_control_plane_group] | default([]) }}"
+  loop_control:
+    label: "{{ item }}"
+  delegate_to: "{{ item }}"
+  register: kube_kubectl_delegate_candidate_results
+  ignore_errors: true
+  run_once: true
+
+- name: Collect healthy kubectl delegate candidates
+  ansible.builtin.set_fact:
+    kube_kubectl_delegate_candidates_healthy: >-
+      {{
+        (kube_kubectl_delegate_candidate_results.results | default([]))
+        | rejectattr('failed', 'defined')
+        | rejectattr('unreachable', 'defined')
+        | map(attribute='item')
+        | list
+      }}
+  run_once: true
+
+- name: Fail when no kubectl delegate is available
+  ansible.builtin.fail:
+    msg: >-
+      Unable to contact any control-plane hosts defined in {{ kube_control_plane_group }} for kubectl delegation.
+      Investigate connectivity or update the control-plane group ordering.
+  when: (kube_kubectl_delegate_candidates_healthy | default([])) | length == 0
+  run_once: true
+
+- name: Record selected kubectl delegate
+  ansible.builtin.set_fact:
+    kube_kubectl_delegate: "{{ kube_kubectl_delegate_candidates_healthy[0] }}"
+  delegate_to: "{{ ansible_play_hosts_all[0] }}"
+  delegate_facts: true
+  run_once: true
+
+- name: Share kubectl delegate with all hosts
+  ansible.builtin.set_fact:
+    kube_kubectl_delegate: "{{ hostvars[ansible_play_hosts_all[0]].kube_kubectl_delegate }}"

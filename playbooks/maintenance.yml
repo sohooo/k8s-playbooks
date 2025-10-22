@@ -13,6 +13,9 @@
     - name: Validate cluster scope before maintenance
       ansible.builtin.import_tasks: tasks/common/ensure_single_cluster.yml
 
+    - name: Select kubectl delegate for this cluster
+      ansible.builtin.import_tasks: tasks/common/select_kubectl_delegate.yml
+
     - name: Skip non-control-plane nodes for server maintenance
       when: not kube_node_is_control_plane
       ansible.builtin.meta: end_host
@@ -69,36 +72,12 @@
     - name: Validate cluster scope before maintenance
       ansible.builtin.import_tasks: tasks/common/ensure_single_cluster.yml
 
+    - name: Select kubectl delegate for this cluster
+      ansible.builtin.import_tasks: tasks/common/select_kubectl_delegate.yml
+
     - name: Skip control-plane nodes for agent maintenance
       when: kube_node_is_control_plane
       ansible.builtin.meta: end_host
   tasks:
-    - name: Determine available server delegates for this cluster
-      ansible.builtin.set_fact:
-        kube_cluster_server_candidates: >-
-          {{
-            (
-              (hostvars | dict2items)
-              | selectattr('key', 'in', groups[kube_cluster] | default([]))
-              | selectattr('value.controlplane', 'defined')
-              | selectattr('value.controlplane')
-              | map(attribute='key')
-            )
-            | unique
-            | list
-          }}
-
-    - name: Fail when no server delegate is available for the agent
-      ansible.builtin.fail:
-        msg: >-
-          Unable to locate a control-plane host for {{ inventory_hostname }} in the {{ kube_cluster | default('undefined') }}
-          cluster. Ensure the inventory defines at least one server node with controlplane=true.
-      when: (kube_cluster_server_candidates | default([])) | length == 0
-
-    - name: Determine kubectl delegate for agent nodes
-      ansible.builtin.set_fact:
-        kube_kubectl_delegate: "{{ kube_cluster_server_candidates[0] }}"
-      when: (kube_cluster_server_candidates | default([])) | length > 0
-
     - name: Run maintenance workflow for agent nodes
       block: *node_maintenance_workflow
