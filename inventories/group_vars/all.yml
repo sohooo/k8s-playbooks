@@ -1,0 +1,4 @@
+---
+# Common derived variables shared across all Kubernetes clusters.
+kube_control_plane_group: "{{ kube_cluster }}_control_plane"
+kube_worker_group: "{{ kube_cluster }}_workers"

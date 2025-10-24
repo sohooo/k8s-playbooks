@@ -1,13 +1,14 @@
 # Maintenance Playbook Reference
 
-The `playbooks/maintenance.yml` file is the primary entry point for scheduled upkeep of the RKE2 clusters. It contains two plays that share the same maintenance block while relying on explicit inventory groups to steer execution.
+The `playbooks/maintenance.yml` file is the primary entry point for scheduled upkeep of the RKE2 clusters. A single play now targets all maintenance hosts and leans on the inventory hierarchy to keep control-plane and worker execution easy to understand.
 
 ## Execution order
 
-1. **Server play** – Runs against the global `kube_control_plane` group, which aggregates each cluster's `<cluster>_control_plane` child referenced by `kube_control_plane_group`. With `serial: 1` the play finishes maintenance on one server before moving on to the next. Because these hosts already ship with a kubeconfig, kubectl interactions can immediately use the selected delegate.
-2. **Agent play** – Targets the companion `kube_workers` aggregate group composed of each cluster's `<cluster>_workers` child referenced by `kube_worker_group`. The play imports the same maintenance block, but relies on the `select_kubectl_delegate` helper to share a control-plane host so Kubernetes commands can be delegated consistently.
+1. **Target group:** The play runs against `kube_nodes`, an aggregate that includes the global `kube_control_plane` and `kube_workers` groups. Each of those children exposes the `kube_node_is_control_plane` fact so role-specific tasks can branch when needed.
+2. **Ordering:** `order: inventory` preserves the inventory ordering of the aggregate groups. Because the `kube_nodes` group lists `kube_control_plane` before `kube_workers`, all control-plane hosts complete first, followed by their worker counterparts.
+3. **Serial maintenance:** With `serial: 1` the workflow finishes on one host before advancing to the next, matching the original behaviour while avoiding duplicate plays.
 
-Splitting the plays by inventory group avoids per-host conditionals and makes it obvious which hosts perform cluster orchestration versus which consume the shared delegate.
+The shared `select_kubectl_delegate` helper continues to probe the inventory-defined control-plane group to select a healthy delegate for Kubernetes commands. Control-plane hosts already ship with a kubeconfig, while worker nodes rely on the delegate fact populated during `pre_tasks`.
 
 ## Task sequence
 
@@ -29,7 +30,7 @@ Each Kubernetes interaction shells out to `kubectl` on the shared delegate host 
 
 ## Extending the workflow
 
-- Add new steps to the maintenance block in `playbooks/maintenance.yml` so the server and agent plays stay in sync.
+- Add new steps to the maintenance block in `playbooks/maintenance.yml` so every host role continues to share the same maintenance pipeline.
 - For optional steps, prefer wrapping the included tasks in `block` statements with clear conditionals so the behaviour remains discoverable.
 - When a new maintenance action requires additional variables, document them in the task file and consider providing defaults in `group_vars`.
 

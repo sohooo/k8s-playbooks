@@ -31,6 +31,10 @@
         gpu_count: "{{ (kube_node_gpu_count_result.stdout | default('0')) | trim | int }}"
         gpu_present: "{{ (kube_node_gpu_count_result.stdout | default('0')) | trim | int > 0 }}"
 
+    - name: Determine desired gpu label
+      ansible.builtin.set_fact:
+        gpu_label_desired: "{{ 'on' if gpu_present | bool else 'off' }}"
+
     - name: Retrieve current gpu label value
       ansible.builtin.command:
         argv:
@@ -46,34 +50,16 @@
       failed_when: kube_node_gpu_label_result.rc != 0
       timeout: "{{ kube_kubectl_command_timeout | default(120) }}"
 
-    - name: Ensure gpu=on label is applied
+    - name: Ensure gpu label matches hardware state
       ansible.builtin.command:
         argv:
           - kubectl
           - label
           - node
           - "{{ kube_node_name | default(inventory_hostname) }}"
-          - gpu=on
+          - "gpu={{ gpu_label_desired }}"
           - --overwrite
       delegate_to: "{{ kube_kubectl_delegate }}"
-      register: kube_node_gpu_label_apply_result
       changed_when: true
-      failed_when: kube_node_gpu_label_apply_result.rc != 0
-      when: gpu_present | bool and (kube_node_gpu_label_result.stdout | default('')) != 'on'
-      timeout: "{{ kube_kubectl_command_timeout | default(300) }}"
-
-    - name: Ensure gpu=off label is applied when no GPU is present
-      ansible.builtin.command:
-        argv:
-          - kubectl
-          - label
-          - node
-          - "{{ kube_node_name | default(inventory_hostname) }}"
-          - gpu=off
-          - --overwrite
-      delegate_to: "{{ kube_kubectl_delegate }}"
-      register: kube_node_gpu_label_remove_result
-      changed_when: true
-      failed_when: kube_node_gpu_label_remove_result.rc != 0
-      when: not (gpu_present | bool) and (kube_node_gpu_label_result.stdout | default('')) != 'off'
+      when: (kube_node_gpu_label_result.stdout | default('')) != gpu_label_desired
       timeout: "{{ kube_kubectl_command_timeout | default(300) }}"
