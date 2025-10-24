@@ -3,8 +3,8 @@
 This repository provides Ansible resources for operating Rancher Kubernetes Engine 2 (RKE2) clusters. It currently includes:
 
 - A readable INI inventory that organises hosts per cluster with dedicated control-plane and worker groups for targeted plays.
-- A rolling maintenance playbook that drains, updates, reboots, and uncordons each host one at a time, ensuring control-plane
-  nodes are serviced before workers.
+- A rolling maintenance playbook that drains, updates, reboots, and uncordons each host one at a time, using inventory ordering
+  to service control-plane nodes before workers.
 - A GPU labelling playbook that detects NVIDIA hardware on each node and applies `gpu=on` or `gpu=off` Kubernetes labels so
   every node is consistently marked for GPU scheduling frameworks such as [HAMi](https://github.com/Project-HAMi/HAMi).
 
@@ -66,14 +66,15 @@ Preview the inventory graph:
 ansible-inventory -i inventories/hosts.ini --graph
 ```
 
-Run the maintenance workflow against a single cluster. The playbook first operates on the control-plane group and then repeats the workflow for the worker group defined in the inventory:
+Run the maintenance workflow against a single cluster. The playbook targets the combined `kube_nodes` group and, thanks to the
+inventory ordering, finishes the control-plane hosts before moving on to workers:
 
 ```bash
 ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --limit kube_alpha
 ```
 
-> The plays target the global `kube_control_plane` and `kube_workers` groups. Use `--limit <cluster>` to narrow execution to a
-> single cluster so the helper tasks can derive the correct delegate facts.
+> The play consumes the global `kube_nodes` aggregate (which includes `kube_control_plane` and `kube_workers`). Use `--limit <cluster>` to
+> narrow execution to a single cluster so the helper tasks can derive the correct delegate facts.
 
 You can also target an individual host or a subset of node types:
 
