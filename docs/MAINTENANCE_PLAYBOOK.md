@@ -1,11 +1,11 @@
 # Maintenance Playbook Reference
 
-The `playbooks/maintenance.yml` file is the primary entry point for scheduled upkeep of the RKE2 clusters. It contains two plays that share the same maintenance block while using the inventory `controlplane` host variable to steer execution.
+The `playbooks/maintenance.yml` file is the primary entry point for scheduled upkeep of the RKE2 clusters. It contains two plays that share the same maintenance block while using dedicated control-plane inventory groups to steer execution.
 
 ## Execution order
 
-1. **Server play** – Targets every host in the inventory but immediately skips nodes without `controlplane=true`. With `serial: 1` the play finishes maintenance on one server before moving on to the next.
-2. **Agent play** – Runs the same sequence for worker nodes. Each host skips itself when `controlplane=true` and discovers the appropriate server delegate by intersecting its cluster membership with hosts that expose the `controlplane` flag.
+1. **Server play** – Targets every host in the inventory but immediately skips nodes that are not listed in the cluster's control-plane group. With `serial: 1` the play finishes maintenance on one server before moving on to the next.
+2. **Agent play** – Runs the same sequence for worker nodes. Each host skips itself when it belongs to the control-plane group and discovers the appropriate server delegate through the shared `select_kubectl_delegate` helper.
 
 The separation into two plays keeps the orchestration logic obvious while the shared host variable avoids maintaining parallel groups in the inventory.
 
@@ -21,11 +21,12 @@ Both plays embed the same maintenance block directly in the playbook so that the
 6. **Post-maintenance cordon check** – Confirms whether the node is still cordoned.
 7. **Uncordon if needed** – Runs `kubectl uncordon` when the previous check reports that the node remains unschedulable.
 
-Each command task has explicit `failed_when` rules so that unexpected return codes surface immediately.
+Each Kubernetes interaction relies on the `community.kubernetes` collection instead of shelling out to `kubectl`, improving idempotence and error reporting.
 
-> **Delegation note:** RKE2 worker nodes do not ship with `kubectl` or a KUBECONFIG. The playbook therefore
-> delegates every Kubernetes command to a control-plane host within the same cluster whenever the current
-> target lacks the tooling. This keeps the maintenance workflow functional across all node types while
+> **Delegation note:** RKE2 worker nodes do not ship with `kubectl` or a KUBECONFIG. The helper task
+> (`tasks/common/select_kubectl_delegate.yml`) now copies the kubeconfig from the first healthy
+> control-plane host to the Ansible controller so that `community.kubernetes` modules can communicate
+> with the API locally. This keeps the maintenance workflow functional across all node types while
 > preserving the node-specific scheduling logic.
 
 ## Extending the workflow
@@ -43,7 +44,8 @@ Keeping the main playbook compact and delegating the implementation to a shared 
 - `kube_drain_include_daemonsets` (default: `false`) – When set to `true` the command renders `--ignore-daemonsets=false`, which forces the drain to wait for daemonset-managed pods. Because daemonsets are typically recreated immediately, the drain will appear to hang unless the daemonset is scaled to zero first.
 - `kube_drain_delete_emptydir_data` (default: `true`) – Enables `--delete-emptydir-data` so pods using `emptyDir` volumes are terminated instead of blocking the drain.
 - `kube_drain_timeout` (default: `10m`) – Maps to the native `--timeout` flag on `kubectl drain` to abort the operation when the grace period expires. The timeout must include a unit (e.g. `5m`, `30s`).
-- `kube_kubectl_command_timeout` (default: `900`) – Caps the runtime of every delegated `kubectl` invocation to prevent the Ansible task itself from running forever if the client hangs or loses connectivity.
+- `kube_kubeconfig_delegate_path` (default: `/etc/rancher/rke2/rke2.yaml`) – Path to the kubeconfig file on
+  the selected delegate. The helper copies this file to the controller before invoking Kubernetes modules.
 
 When a drain times out or hangs, take the following recovery steps:
 

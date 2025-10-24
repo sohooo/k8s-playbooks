@@ -32,6 +32,8 @@ See [`docs/README.md`](docs/README.md) for deep dives into the playbook internal
 - Access to the target nodes with privilege escalation (`become`)
 - `kubectl` available on control-plane nodes (worker nodes delegate Kubernetes operations to a
   control-plane host)
+- The [`community.kubernetes`](https://galaxy.ansible.com/community/kubernetes) collection and its
+  Python dependencies (`kubernetes`, `openshift`) installed in the execution environment
 
 ## Local development setup
 
@@ -51,6 +53,13 @@ Confirm the installation succeeded:
 ```bash
 ansible --version
 ansible-lint --version
+```
+
+Install the required Ansible collections so the playbooks can use the Kubernetes modules without
+shelling out to `kubectl` manually:
+
+```bash
+ansible-galaxy collection install -r collections/requirements.yml
 ```
 
 > **Tip:** Activate the virtual environment (`source .venv/bin/activate`) in every new shell before running the commands below so
