@@ -1,16 +1,27 @@
 ---
 # Drain workloads from a Kubernetes node with configurable daemonset and emptyDir handling.
+- name: Determine drain timeout in seconds for {{ kube_node_name | default(inventory_hostname) }}
+  ansible.builtin.set_fact:
+    kube_drain_timeout_seconds: "{{ _kube_drain_timeout_seconds | int }}"
+  vars:
+    _timeout_input: "{{ kube_drain_timeout | default('10m') }}"
+    _timeout_number: "{{ (_timeout_input | regex_search('^\\d+')) | default('10') | int }}"
+    _timeout_unit: "{{ (_timeout_input | regex_search('[a-zA-Z]+$')) | default('m') | lower }}"
+    _kube_drain_timeout_seconds: >-
+      {% if _timeout_unit == 'h' %}
+      {{ _timeout_number * 3600 }}
+      {% elif _timeout_unit == 'm' %}
+      {{ _timeout_number * 60 }}
+      {% else %}
+      {{ _timeout_number }}
+      {% endif %}
+
 - name: Drain {{ kube_node_name | default(inventory_hostname) }}
-  ansible.builtin.command:
-    argv:
-      - kubectl
-      - drain
-      - "{{ kube_node_name | default(inventory_hostname) }}"
-      - "--ignore-daemonsets={{ (kube_drain_include_daemonsets | default(false) | bool) | ternary('false', 'true') }}"
-      - "--delete-emptydir-data={{ (kube_drain_delete_emptydir_data | default(true) | bool) | ternary('true', 'false') }}"
-      - "--timeout={{ kube_drain_timeout | default('10m') }}"
-  delegate_to: "{{ kube_kubectl_delegate }}"
-  register: kube_node_drain_result
-  changed_when: true
-  failed_when: kube_node_drain_result.rc != 0
-  timeout: "{{ kube_kubectl_command_timeout | default(900) }}"
+  community.kubernetes.k8s_drain:
+    name: "{{ kube_node_name | default(inventory_hostname) }}"
+    state: drained
+    kubeconfig: "{{ kube_kubectl_delegate_kubeconfig_path }}"
+    ignore_daemonsets: "{{ (not (kube_drain_include_daemonsets | default(false) | bool)) | bool }}"
+    delete_emptydir_data: "{{ (kube_drain_delete_emptydir_data | default(true) | bool) }}"
+    timeout: {{ kube_drain_timeout_seconds | int }}
+  delegate_to: localhost

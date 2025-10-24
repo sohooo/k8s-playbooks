@@ -47,6 +47,37 @@
   delegate_facts: true
   run_once: true
 
+- name: Read kubeconfig from selected delegate
+  ansible.builtin.slurp:
+    src: "{{ kube_kubeconfig_delegate_path | default('/etc/rancher/rke2/rke2.yaml') }}"
+  delegate_to: "{{ hostvars[ansible_play_hosts_all[0]].kube_kubectl_delegate }}"
+  register: kube_kubectl_delegate_kubeconfig_content
+  run_once: true
+
+- name: Create controller-local kubeconfig copy
+  ansible.builtin.tempfile:
+    state: file
+    suffix: kubeconfig
+  delegate_to: localhost
+  register: kube_kubectl_delegate_kubeconfig_tempfile
+  run_once: true
+
+- name: Write kubeconfig content to controller-local path
+  ansible.builtin.copy:
+    dest: "{{ kube_kubectl_delegate_kubeconfig_tempfile.path }}"
+    content: "{{ kube_kubectl_delegate_kubeconfig_content.content | b64decode }}"
+    mode: "0600"
+  delegate_to: localhost
+  run_once: true
+
+- name: Record controller-local kubeconfig path
+  ansible.builtin.set_fact:
+    kube_kubectl_delegate_kubeconfig_path: "{{ kube_kubectl_delegate_kubeconfig_tempfile.path }}"
+  delegate_to: localhost
+  delegate_facts: true
+  run_once: true
+
 - name: Share kubectl delegate with all hosts
   ansible.builtin.set_fact:
     kube_kubectl_delegate: "{{ hostvars[ansible_play_hosts_all[0]].kube_kubectl_delegate }}"
+    kube_kubectl_delegate_kubeconfig_path: "{{ hostvars['localhost'].kube_kubectl_delegate_kubeconfig_path }}"

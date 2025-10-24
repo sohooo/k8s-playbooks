@@ -7,7 +7,8 @@ The repository ships with a static inventory located at [`inventories/hosts.ini`
 - Each `kube_<name>` group represents a single RKE2 cluster.
 - Every cluster sets the `kube_cluster` variable so plays can enforce that maintenance only targets one cluster at a time.
 - Each cluster lists every node directly under its group while setting `kube_cluster` so host variables inherit the cluster name.
-- Control-plane nodes inside a cluster set `controlplane=true`. Worker nodes omit the flag.
+- Control-plane nodes live in a dedicated `<cluster>_control_plane` child group referenced by the `kube_control_plane_group`
+  variable. Worker nodes remain only in the parent cluster group.
 
 Example excerpt:
 
@@ -19,11 +20,16 @@ kube_alpha
 kube_cluster=kube_alpha
 
 [kube_alpha]
-kube01 controlplane=true
-kube02 controlplane=true
-kube03 controlplane=true
+kube01
+kube02
+kube03
 kube04
 kube05
+
+[kube_alpha_control_plane]
+kube01
+kube02
+kube03
 ```
 
 ## Targeting hosts
@@ -31,4 +37,7 @@ kube05
 - **Cluster:** `ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --limit kube_alpha`
 - **Single host:** `ansible-playbook -i inventories/hosts.ini playbooks/maintenance.yml --limit kube02`
 
-The maintenance playbook automatically distinguishes between control-plane and worker roles by checking the `controlplane` host variable, so no additional helper groups are required. When creating new clusters, copy an existing section and adjust the hostnames. Keep the naming consistent to simplify filtering and monitoring.
+The maintenance playbook automatically distinguishes between control-plane and worker roles by looking up
+the `kube_control_plane_group` variable defined for each cluster. When creating new clusters, copy an
+existing section, adjust the hostnames, and create the companion control-plane group so the helper tasks
+can locate a Kubernetes API delegate.
