@@ -5,7 +5,7 @@ The `playbooks/maintenance.yml` file is the primary entry point for scheduled up
 ## Execution order
 
 1. **Server play** – Runs against the global `kube_control_plane` group, which aggregates each cluster's `<cluster>_control_plane` child referenced by `kube_control_plane_group`. With `serial: 1` the play finishes maintenance on one server before moving on to the next. Because these hosts already ship with a kubeconfig, kubectl interactions can immediately use the selected delegate.
-2. **Agent play** – Targets the companion `kube_workers` aggregate group composed of each cluster's `<cluster>_workers` child referenced by `kube_worker_group`. The play imports the same maintenance block, but relies on the `select_kubectl_delegate` helper to copy a kubeconfig from the control-plane and execute Kubernetes operations from the Ansible controller.
+2. **Agent play** – Targets the companion `kube_workers` aggregate group composed of each cluster's `<cluster>_workers` child referenced by `kube_worker_group`. The play imports the same maintenance block, but relies on the `select_kubectl_delegate` helper to share a control-plane host so Kubernetes commands can be delegated consistently.
 
 Splitting the plays by inventory group avoids per-host conditionals and makes it obvious which hosts perform cluster orchestration versus which consume the shared delegate.
 
@@ -21,13 +21,11 @@ Both plays embed the same maintenance block directly in the playbook so that the
 6. **Post-maintenance cordon check** – Confirms whether the node is still cordoned.
 7. **Uncordon if needed** – Runs `kubectl uncordon` when the previous check reports that the node remains unschedulable.
 
-Each Kubernetes interaction relies on the `community.kubernetes` collection instead of shelling out to `kubectl`, improving idempotence and error reporting.
+Each Kubernetes interaction shells out to `kubectl` on the shared delegate host selected during `pre_tasks`, matching the behaviour administrators expect from manual maintenance.
 
 > **Delegation note:** RKE2 worker nodes do not ship with `kubectl` or a KUBECONFIG. The helper task
-> (`tasks/common/select_kubectl_delegate.yml`) now copies the kubeconfig from the first healthy
-> control-plane host to the Ansible controller so that `community.kubernetes` modules can communicate
-> with the API locally. This keeps the maintenance workflow functional across all node types while
-> preserving the node-specific scheduling logic.
+> (`tasks/common/select_kubectl_delegate.yml`) chooses the first healthy control-plane host and shares
+> it via the `kube_kubectl_delegate` fact so every node can delegate Kubernetes commands consistently.
 
 ## Extending the workflow
 
@@ -44,9 +42,6 @@ Keeping the main playbook compact and delegating the implementation to a shared 
 - `kube_drain_include_daemonsets` (default: `false`) – When set to `true` the command renders `--ignore-daemonsets=false`, which forces the drain to wait for daemonset-managed pods. Because daemonsets are typically recreated immediately, the drain will appear to hang unless the daemonset is scaled to zero first.
 - `kube_drain_delete_emptydir_data` (default: `true`) – Enables `--delete-emptydir-data` so pods using `emptyDir` volumes are terminated instead of blocking the drain.
 - `kube_drain_timeout` (default: `10m`) – Maps to the native `--timeout` flag on `kubectl drain` to abort the operation when the grace period expires. The timeout must include a unit (e.g. `5m`, `30s`).
-- `kube_kubeconfig_delegate_path` (default: `/etc/rancher/rke2/rke2.yaml`) – Path to the kubeconfig file on
-  the selected delegate. The helper copies this file to the controller before invoking Kubernetes modules.
-
 When a drain times out or hangs, take the following recovery steps:
 
 1. Inspect which pods are blocking the drain with `kubectl get pods -A --field-selector spec.nodeName=<node> -o wide`. Daemonset pods must be deleted by scaling the owning daemonset to zero or by temporarily disabling the drain option that includes them.
