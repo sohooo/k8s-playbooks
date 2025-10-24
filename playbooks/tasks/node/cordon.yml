@@ -1,11 +1,16 @@
 ---
 # Ensure a Kubernetes node is cordoned (unschedulable).
 - name: Cordon {{ kube_node_name | default(inventory_hostname) }}
-  community.kubernetes.k8s_cordon:
-    name: "{{ kube_node_name | default(inventory_hostname) }}"
-    state: cordoned
-    kubeconfig: "{{ kube_kubectl_delegate_kubeconfig_path }}"
-  delegate_to: localhost
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - cordon
+      - "{{ kube_node_name | default(inventory_hostname) }}"
+  delegate_to: "{{ kube_kubectl_delegate }}"
+  register: kube_node_cordon_result
+  changed_when: true
+  failed_when: kube_node_cordon_result.rc != 0
+  timeout: "{{ kube_kubectl_command_timeout | default(300) }}"
 
 - name: Update cached cordon status for {{ kube_node_name | default(inventory_hostname) }}
   ansible.builtin.set_fact:
