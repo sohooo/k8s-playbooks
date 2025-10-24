@@ -1,11 +1,11 @@
 ---
 - name: Maintenance on rke2 server nodes
-  hosts: all
+  hosts: kube_control_plane
   become: true
   serial: 1
   any_errors_fatal: true  # Halt the play entirely if any task fails to allow manual debugging
   vars:
-    kube_node_is_control_plane: "{{ controlplane | default(false) | bool }}"
+    kube_node_is_control_plane: true
   environment:
     KUBECONFIG: /etc/rancher/rke2/rke2.yaml
     PATH: "/var/lib/rancher/rke2/bin:{{ ansible_env.PATH | default('/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin') }}"
@@ -14,11 +14,8 @@
       ansible.builtin.import_tasks: tasks/common/ensure_single_cluster.yml
 
     - name: Select kubectl delegate for this cluster
+      when: kube_kubectl_delegate is not defined
       ansible.builtin.import_tasks: tasks/common/select_kubectl_delegate.yml
-
-    - name: Skip non-control-plane nodes for server maintenance
-      when: not kube_node_is_control_plane
-      ansible.builtin.meta: end_host
   tasks:
     - name: Run maintenance workflow for server nodes
       block: &node_maintenance_workflow
@@ -59,12 +56,12 @@
             file: tasks/node/uncordon.yml
 
 - name: Maintenance on rke2 agent nodes
-  hosts: all
+  hosts: kube_workers
   become: true
   serial: 1
   any_errors_fatal: true  # Halt the play entirely if any task fails to allow manual debugging
   vars:
-    kube_node_is_control_plane: "{{ controlplane | default(false) | bool }}"
+    kube_node_is_control_plane: false
   environment:
     KUBECONFIG: /etc/rancher/rke2/rke2.yaml
     PATH: "/var/lib/rancher/rke2/bin:{{ ansible_env.PATH | default('/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin') }}"
@@ -74,10 +71,6 @@
 
     - name: Select kubectl delegate for this cluster
       ansible.builtin.import_tasks: tasks/common/select_kubectl_delegate.yml
-
-    - name: Skip control-plane nodes for agent maintenance
-      when: kube_node_is_control_plane
-      ansible.builtin.meta: end_host
   tasks:
     - name: Run maintenance workflow for agent nodes
       block: *node_maintenance_workflow
