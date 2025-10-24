@@ -1,13 +1,13 @@
 # Maintenance Playbook Reference
 
-The `playbooks/maintenance.yml` file is the primary entry point for scheduled upkeep of the RKE2 clusters. It contains two plays that share the same maintenance block while using dedicated control-plane inventory groups to steer execution.
+The `playbooks/maintenance.yml` file is the primary entry point for scheduled upkeep of the RKE2 clusters. It contains two plays that share the same maintenance block while relying on explicit inventory groups to steer execution.
 
 ## Execution order
 
-1. **Server play** – Targets every host in the inventory but immediately skips nodes that are not listed in the cluster's control-plane group. With `serial: 1` the play finishes maintenance on one server before moving on to the next.
-2. **Agent play** – Runs the same sequence for worker nodes. Each host skips itself when it belongs to the control-plane group and discovers the appropriate server delegate through the shared `select_kubectl_delegate` helper.
+1. **Server play** – Runs against the global `kube_control_plane` group, which aggregates each cluster's `<cluster>_control_plane` child referenced by `kube_control_plane_group`. With `serial: 1` the play finishes maintenance on one server before moving on to the next. Because these hosts already ship with a kubeconfig, kubectl interactions can immediately use the selected delegate.
+2. **Agent play** – Targets the companion `kube_workers` aggregate group composed of each cluster's `<cluster>_workers` child referenced by `kube_worker_group`. The play imports the same maintenance block, but relies on the `select_kubectl_delegate` helper to copy a kubeconfig from the control-plane and execute Kubernetes operations from the Ansible controller.
 
-The separation into two plays keeps the orchestration logic obvious while the shared host variable avoids maintaining parallel groups in the inventory.
+Splitting the plays by inventory group avoids per-host conditionals and makes it obvious which hosts perform cluster orchestration versus which consume the shared delegate.
 
 ## Task sequence
 

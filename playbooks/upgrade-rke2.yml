@@ -1,11 +1,11 @@
 ---
 - name: Upgrade RKE2 server nodes
-  hosts: all
+  hosts: kube_control_plane
   become: true
   serial: 1
   any_errors_fatal: true
   vars:
-    kube_node_is_control_plane: "{{ controlplane | default(false) | bool }}"
+    kube_node_is_control_plane: true
     kube_rke2_service_name: "{{ 'rke2-server' if kube_node_is_control_plane else 'rke2-agent' }}"
   environment:
     KUBECONFIG: /etc/rancher/rke2/rke2.yaml
@@ -15,11 +15,8 @@
       ansible.builtin.import_tasks: tasks/common/ensure_single_cluster.yml
 
     - name: Select kubectl delegate for this cluster
+      when: kube_kubectl_delegate is not defined
       ansible.builtin.import_tasks: tasks/common/select_kubectl_delegate.yml
-
-    - name: Skip non-control-plane nodes for server upgrade
-      when: not kube_node_is_control_plane
-      ansible.builtin.meta: end_host
   tasks:
     - name: Read target RKE2 version from release file
       ansible.builtin.slurp:
@@ -149,12 +146,12 @@
             file: tasks/node/uncordon.yml
 
 - name: Upgrade RKE2 agent nodes
-  hosts: all
+  hosts: kube_workers
   become: true
   serial: 1
   any_errors_fatal: true
   vars:
-    kube_node_is_control_plane: "{{ controlplane | default(false) | bool }}"
+    kube_node_is_control_plane: false
     kube_rke2_service_name: "{{ 'rke2-server' if kube_node_is_control_plane else 'rke2-agent' }}"
   environment:
     KUBECONFIG: /etc/rancher/rke2/rke2.yaml
@@ -165,10 +162,6 @@
 
     - name: Select kubectl delegate for this cluster
       ansible.builtin.import_tasks: tasks/common/select_kubectl_delegate.yml
-
-    - name: Skip control-plane nodes for agent upgrade
-      when: kube_node_is_control_plane
-      ansible.builtin.meta: end_host
   tasks:
     - name: Read target RKE2 version from release file
       ansible.builtin.slurp:
