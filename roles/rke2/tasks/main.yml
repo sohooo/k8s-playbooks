@@ -1,0 +1,6 @@
+---
+- name: Fail when tasks_from is missing
+  ansible.builtin.fail:
+    msg: >-
+      The rke2 role requires tasks_from to be specified. Use tasks_from=upgrade
+      for upgrade workflows or tasks_from=maintenance for rolling maintenance.

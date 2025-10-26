@@ -1,0 +1,53 @@
+---
+- name: Prepare kubectl helpers
+  ansible.builtin.include_role:
+    name: kubectl
+    tasks_from: setup
+
+- name: Run maintenance workflow
+  block:
+    - name: Capture node scheduling state before maintenance
+      ansible.builtin.include_role:
+        name: kubectl
+      vars:
+        kubectl_action: get_cordon_status
+
+    - name: Remember original scheduling state
+      ansible.builtin.set_fact:
+        rke2_node_was_cordoned: "{{ kube_node_is_cordoned | default(false) | bool }}"
+
+    - name: Ensure node is cordoned prior to maintenance
+      when: not (kube_node_is_cordoned | default(false) | bool)
+      ansible.builtin.include_role:
+        name: kubectl
+      vars:
+        kubectl_action: cordon
+
+    - name: Drain workloads before running maintenance
+      when: not (rke2_node_was_cordoned | default(false) | bool)
+      ansible.builtin.include_role:
+        name: kubectl
+      vars:
+        kubectl_action: drain
+
+    - name: Execute Puppet maintenance
+      ansible.builtin.import_tasks: "{{ playbook_dir }}/tasks/common/puppet_agent.yml"
+
+    - name: Apply operating system updates
+      ansible.builtin.import_tasks: "{{ playbook_dir }}/tasks/common/dnf_update.yml"
+
+    - name: Restart node after maintenance
+      ansible.builtin.import_tasks: "{{ playbook_dir }}/tasks/common/reboot.yml"
+
+    - name: Refresh node scheduling state after reboot
+      ansible.builtin.include_role:
+        name: kubectl
+      vars:
+        kubectl_action: get_cordon_status
+
+    - name: Restore scheduling state if node was previously schedulable
+      when: not (rke2_node_was_cordoned | default(false) | bool) and (kube_node_is_cordoned | default(false) | bool)
+      ansible.builtin.include_role:
+        name: kubectl
+      vars:
+        kubectl_action: uncordon

@@ -1,0 +1,11 @@
+---
+# Default configuration for the rke2 role. Consumers can override these
+# values from playbooks or inventory as required.
+
+# Service to start after completing an upgrade. Control-plane nodes use the
+# server unit while workers rely on the agent unit.
+rke2_service_name: >-
+  {{
+    kube_rke2_service_name
+    | default('rke2-server' if (kube_node_is_control_plane | default(false) | bool) else 'rke2-agent')
+  }}
