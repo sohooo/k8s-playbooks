@@ -2,49 +2,68 @@
 # Default values for the kubectl role. Consumers can override these to
 # tailor kubectl interactions for their environment.
 
-# Action to execute. Supported values are defined in
-# kubectl_supported_actions.
+# Action to execute. `tasks/main.yml` validates this against
+# `kubectl_supported_actions` before including the matching handler under
+# `tasks/actions/`.
 kubectl_action: ""
 
-# Node that kubectl should target. Defaults to the inventory host, falling
-# back to kube_node_name for backwards compatibility.
+# Node that kubectl should target. `tasks/main.yml` stores the resolved host in
+# the `kubectl_target_node` fact that each action consumes.
 kubectl_node: "{{ kube_node_name | default(inventory_hostname) }}"
 
-# Host that should execute kubectl commands. When unset the role falls back to
-# kube_kubectl_delegate, which calling playbooks already determine.
+# Host that should execute kubectl commands. `tasks/main.yml` saves the chosen
+# delegate to `kubectl_delegate_host`, which every action task uses for
+# delegation.
 kubectl_delegate: "{{ kube_kubectl_delegate | default(omit, true) }}"
 
 # General command timeout (in seconds) used by most kubectl invocations unless
-# a more specific timeout is provided.
+# a more specific timeout is provided. Serves as the module-level `timeout`
+# value in the action handlers when no dedicated variable is available (for
+# example the final task in `actions/drain.yml`).
 kubectl_command_timeout: "{{ kube_kubectl_command_timeout | default(300) }}"
 
-# Fine-grained timeouts and options for individual actions.
+# Fine-grained timeouts and options for individual actions. Each value is
+# referenced directly inside the corresponding file in `tasks/actions/`.
+# Used by `actions/cordon.yml` as the module `timeout` for the cordon command.
 kubectl_cordon_timeout: "{{ kubectl_command_timeout }}"
+# Used by `actions/uncordon.yml` as the module `timeout` for the uncordon
+# command.
 kubectl_uncordon_timeout: "{{ kubectl_command_timeout }}"
 kubectl_status_timeout: "{{ kube_kubectl_command_timeout | default(120) }}"
+# Used by `actions/get_cordon_status.yml` for the module-level `timeout` value.
+
 kubectl_drain_timeout: "{{ kube_drain_timeout | default('10m') }}"
+# Passed as the `--timeout` flag when draining nodes (`actions/drain.yml`).
+
 kubectl_drain_delete_emptydir_data: "{{ kube_drain_delete_emptydir_data | default(true) }}"
+# Controls the `--delete-emptydir-data` flag in `actions/drain.yml`.
+
 kubectl_drain_include_daemonsets: "{{ kube_drain_include_daemonsets | default(true) }}"
+# Controls how `actions/drain.yml` populates the `--ignore-daemonsets` flag.
 
 # Automatically refresh the kube_node_is_cordoned fact when appropriate so
-# existing playbooks continue to work unchanged.
+# existing playbooks continue to work unchanged. Referenced by the final tasks
+# in `actions/cordon.yml`, `actions/uncordon.yml`, and
+# `actions/get_cordon_status.yml`.
 kubectl_cache_cordon_fact: true
 
-# Internal list of allowed actions. Override only when extending the role with
-# additional action task files.
+# Internal list of allowed actions. `tasks/main.yml` asserts that the selected
+# action is listed here before including the corresponding task file.
 kubectl_supported_actions:
   - cordon
   - drain
   - get_cordon_status
   - uncordon
 
-# Location of the kubeconfig used for delegated kubectl calls.
+# Location of the kubeconfig used for delegated kubectl calls. `tasks/setup.yml`
+# injects this into the `kubectl_environment` fact consumed by every action.
 kubectl_kubeconfig_path: "/etc/rancher/rke2/rke2.yaml"
 
-# Directory that ships the kubectl binary on RKE2 nodes. Added to PATH so the
-# shell-based kubectl invocations work even when the host lacks a default
-# installation.
+# Directory that ships the kubectl binary on RKE2 nodes. `tasks/setup.yml`
+# prefixes PATH with this directory before delegating to kubectl.
 kubectl_path_prefix: "/var/lib/rancher/rke2/bin"
 
-# Fallback PATH used when ansible_env.PATH is unavailable.
+# Fallback PATH used when ansible_env.PATH is unavailable. `tasks/setup.yml`
+# combines this with `kubectl_path_prefix` when building the execution
+# environment.
 kubectl_default_path: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
