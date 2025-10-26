@@ -140,3 +140,42 @@
         name: kubectl
       vars:
         kubectl_action: uncordon
+  rescue:
+    - name: Gather node scheduling state after upgrade failure
+      block:
+        - name: Collect scheduling state for reporting after failure
+          ansible.builtin.include_role:
+            name: kubectl
+          vars:
+            kubectl_action: get_cordon_status
+      rescue:
+        - name: Warn when scheduling state could not be determined
+          ansible.builtin.debug:
+            msg: >-
+              Unable to determine node scheduling state after an upgrade failure on {{ inventory_hostname }}.
+
+    - name: Attempt to restore scheduling state after upgrade failure
+      when: (rke2_node_was_cordoned is defined) and not (rke2_node_was_cordoned | bool)
+      block:
+        - name: Try to uncordon node after upgrade failure
+          block:
+            - name: Run uncordon command after failure
+              ansible.builtin.include_role:
+                name: kubectl
+              vars:
+                kubectl_action: uncordon
+          rescue:
+            - name: Warn operators about manual uncordon requirement
+              ansible.builtin.debug:
+                msg: >-
+                  Automatic uncordon after an upgrade failure did not succeed on {{ inventory_hostname }}.
+                  Please run `kubectl uncordon {{ inventory_hostname }}` manually once remediation is complete.
+  always:
+    - name: Report node scheduling state after upgrade workflow
+      ansible.builtin.debug:
+        msg: >-
+          Node {{ inventory_hostname }} scheduling state after upgrade workflow: {{
+            'cordoned' if kube_node_is_cordoned | default(false) | bool
+            else 'schedulable' if kube_node_is_cordoned is defined
+            else 'unknown'
+          }}.
