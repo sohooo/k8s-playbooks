@@ -7,6 +7,8 @@ This repository provides Ansible resources for operating Rancher Kubernetes Engi
   to service control-plane nodes before workers.
 - A GPU labelling playbook that detects NVIDIA hardware on each node and applies `gpu=on` or `gpu=off` Kubernetes labels so
   every node is consistently marked for GPU scheduling frameworks such as [HAMi](https://github.com/Project-HAMi/HAMi).
+- A troubleshooting toolkit playbook that gathers multi-node network traces, cluster diagnostics, and packages the findings for
+  SRE or vendor escalation.
 
 ## Repository layout
 
@@ -18,6 +20,7 @@ This repository provides Ansible resources for operating Rancher Kubernetes Engi
 ├── playbooks/
 │   ├── label-gpu-nodes.yml   # Apply the gpu=on label to hosts with NVIDIA hardware
 │   ├── maintenance.yml       # Entry point for the maintenance workflow
+│   ├── troubleshooting-toolkit.yml  # Collect in-depth diagnostics for incident response
 │   └── tasks/
 │       └── common/           # Re-usable task snippets for maintenance actions
 └── scripts/
@@ -90,6 +93,45 @@ Apply the GPU labels so that every node advertises whether a GPU is available. T
 ```bash
 ansible-playbook -i inventories/hosts.ini playbooks/label-gpu-nodes.yml --limit kube_alpha
 ```
+
+Run the troubleshooting toolkit to capture network probes, Kubernetes object state, and component logs. Provide
+`troubleshooting_targets` and optionally `troubleshooting_flagged_namespaces` or restart lists in an `extra-vars` file to
+customise the collection run:
+
+```bash
+ansible-playbook -i inventories/hosts.ini playbooks/troubleshooting-toolkit.yml \
+  --limit kube_alpha \
+  -e @vars/troubleshooting.yaml
+```
+
+The play creates a timestamped archive under `artifacts/troubleshooting-toolkit/` containing per-node tests, cluster-wide
+events, pod logs (including CNI, kube-proxy, and CoreDNS), optional workload restarts, and workload manifests for reproducing
+failures in a test environment.
+
+#### Reproducing failed workloads in a test cluster
+
+1. Extract the generated tarball on your workstation:
+
+   ```bash
+   tar -xzf artifacts/troubleshooting-toolkit/troubleshooting-<run_id>.tar.gz \
+     -C artifacts/troubleshooting-toolkit/
+   ```
+
+2. Review the extracted `cluster/reproduction/` directory. It contains:
+
+   - `pods/`: pod manifests captured for every workload stuck outside the `Running` phase.
+   - `owners/`: controller manifests (ReplicaSets, Deployments, StatefulSets, DaemonSets, Jobs, etc.) that manage the failed
+     pods. ReplicaSet owners automatically include their parent Deployment manifests so application rollouts can be replayed.
+
+3. Apply the manifests against a non-production cluster to recreate the workload state:
+
+   ```bash
+   kubectl apply -f cluster/reproduction/owners/
+   kubectl apply -f cluster/reproduction/pods/
+   ```
+
+   > **Tip:** Apply the controller manifests first (`owners/`) so the controllers manage subsequent pod lifecycles. Use a
+   > purpose-built namespace or cluster to avoid impacting production workloads.
 
 ### Running ad-hoc commands
 

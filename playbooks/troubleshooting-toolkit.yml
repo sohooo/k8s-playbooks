@@ -1,0 +1,7 @@
+---
+- name: Kubernetes troubleshooting toolkit
+  hosts: "{{ diagnostics_source_group | default('kube_nodes') }}"
+  become: true
+  gather_facts: true
+  roles:
+    - role: troubleshooting_toolkit

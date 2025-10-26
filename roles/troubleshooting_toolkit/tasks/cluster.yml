@@ -1,0 +1,278 @@
+---
+- name: Prepare cluster diagnostics directories
+  ansible.builtin.set_fact:
+    troubleshooting_cluster_dir: "{{ troubleshooting_remote_parent_dir }}/{{ troubleshooting_run_id }}/cluster"
+
+- name: Create cluster diagnostics directories
+  ansible.builtin.file:
+    path: "{{ troubleshooting_cluster_dir }}/{{ item }}"
+    state: directory
+    mode: "0750"
+  loop:
+    - logs
+    - services
+    - pods
+    - restarts
+    - reproduction
+
+- name: Create reproduction data directories
+  ansible.builtin.file:
+    path: "{{ troubleshooting_cluster_dir }}/reproduction/{{ item }}"
+    state: directory
+    mode: "0750"
+  loop:
+    - pods
+    - owners
+
+- name: Capture cluster node overview
+  ansible.builtin.shell: |
+    set -o pipefail
+    kubectl get nodes -o wide > "{{ troubleshooting_cluster_dir }}/nodes.txt" 2>&1
+  args:
+    executable: /bin/bash
+  changed_when: true
+  failed_when: false
+
+- name: Capture cluster pod overview
+  ansible.builtin.shell: |
+    set -o pipefail
+    kubectl get pods -A -o wide > "{{ troubleshooting_cluster_dir }}/pods.txt" 2>&1
+  args:
+    executable: /bin/bash
+  changed_when: true
+  failed_when: false
+
+- name: Capture cluster events
+  ansible.builtin.shell: |
+    set -o pipefail
+    kubectl get events -A --sort-by=.lastTimestamp > "{{ troubleshooting_cluster_dir }}/events.txt" 2>&1
+  args:
+    executable: /bin/bash
+  changed_when: true
+  failed_when: false
+
+- name: Capture services and endpoints for flagged namespaces
+  ansible.builtin.shell: |
+    set -o pipefail
+    {
+      echo "# kubectl get svc -n {{ item }} -o wide"
+      kubectl get svc -n {{ item }} -o wide
+      echo
+      echo "# kubectl get endpoints -n {{ item }} -o wide"
+      kubectl get endpoints -n {{ item }} -o wide
+    } > "{{ troubleshooting_cluster_dir }}/services/{{ item | regex_replace('[^A-Za-z0-9_.-]', '_') }}-services-endpoints.txt" 2>&1
+  args:
+    executable: /bin/bash
+  loop: "{{ troubleshooting_flagged_namespaces }}"
+  loop_control:
+    label: "{{ item }}"
+  changed_when: true
+  failed_when: false
+
+- name: Capture service descriptions for flagged namespaces
+  ansible.builtin.shell: |
+    set -o pipefail
+    for svc in $(kubectl get svc -n {{ item }} -o name); do
+      svc_safe=$(echo "$svc" | sed 's|/|-|g')
+      kubectl describe "$svc" -n {{ item }} > "{{ troubleshooting_cluster_dir }}/services/{{ item | regex_replace('[^A-Za-z0-9_.-]', '_') }}-${svc_safe}.describe" 2>&1 || true
+    done
+  args:
+    executable: /bin/bash
+  loop: "{{ troubleshooting_flagged_namespaces }}"
+  loop_control:
+    label: "{{ item }}"
+  changed_when: true
+  failed_when: false
+
+- name: Capture endpoint descriptions for flagged namespaces
+  ansible.builtin.shell: |
+    set -o pipefail
+    for ep in $(kubectl get endpoints -n {{ item }} -o name); do
+      ep_safe=$(echo "$ep" | sed 's|/|-|g')
+      kubectl describe "$ep" -n {{ item }} > "{{ troubleshooting_cluster_dir }}/services/{{ item | regex_replace('[^A-Za-z0-9_.-]', '_') }}-${ep_safe}.describe" 2>&1 || true
+    done
+  args:
+    executable: /bin/bash
+  loop: "{{ troubleshooting_flagged_namespaces }}"
+  loop_control:
+    label: "{{ item }}"
+  changed_when: true
+  failed_when: false
+
+- name: Record pods that are not running
+  ansible.builtin.shell: |
+    set -o pipefail
+    kubectl get pods -A --field-selector=status.phase!=Running -o wide > "{{ troubleshooting_cluster_dir }}/pods/not-running.txt" 2>&1
+  args:
+    executable: /bin/bash
+  changed_when: true
+  failed_when: false
+
+- name: Collect non-running pod inventory
+  ansible.builtin.shell: |
+    set -o pipefail
+    kubectl get pods -A --field-selector=status.phase!=Running -o json
+  register: troubleshooting_non_running_pods_raw
+  changed_when: false
+  failed_when: false
+
+- name: Parse non-running pod inventory
+  ansible.builtin.set_fact:
+    troubleshooting_non_running_pod_objects: "{{ ((troubleshooting_non_running_pods_raw.stdout | default('{\"items\": []}')) | from_json).get('items', []) }}"
+
+- name: Ensure non-running pod inventory defaults to an empty list
+  ansible.builtin.set_fact:
+    troubleshooting_non_running_pod_objects: "{{ troubleshooting_non_running_pod_objects | default([]) }}"
+
+- name: Capture diagnostics for pods that are not running
+  ansible.builtin.shell: |
+    set -o pipefail
+    namespace="{{ item.metadata.namespace }}"
+    pod="{{ item.metadata.name | default('') }}"
+    if [ -n "$namespace" ] && [ -n "$pod" ]; then
+      safe_name=$(printf '%s-%s' "$namespace" "$pod" | sed 's/[^A-Za-z0-9_.-]/_/g')
+      {
+        echo "# kubectl describe pod $namespace/$pod"
+        kubectl describe pod "$pod" -n "$namespace" || true
+        echo
+        echo "# kubectl logs --all-containers"
+        kubectl logs "$pod" -n "$namespace" --all-containers --tail={{ troubleshooting_pod_log_tail_lines }} || true
+        echo
+        echo "# kubectl logs --all-containers --previous"
+        kubectl logs "$pod" -n "$namespace" --all-containers --tail={{ troubleshooting_pod_log_tail_lines }} --previous || true
+      } > "{{ troubleshooting_cluster_dir }}/pods/${safe_name}.txt" 2>&1
+    fi
+  args:
+    executable: /bin/bash
+  loop: "{{ troubleshooting_non_running_pod_objects | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.namespace }}/{{ item.metadata.name }}"
+  when: troubleshooting_non_running_pod_objects | default([]) | length > 0
+  changed_when: true
+
+- name: Capture manifests for non-running pods and their owners
+  ansible.builtin.shell: |
+    set -o pipefail
+    namespace="{{ item.metadata.namespace }}"
+    pod="{{ item.metadata.name | default('') }}"
+    if [ -z "$namespace" ] || [ -z "$pod" ]; then
+      exit 0
+    fi
+
+    pod_safe=$(printf '%s-%s' "$namespace" "$pod" | sed 's/[^A-Za-z0-9_.-]/_/g')
+    kubectl get pod "$pod" -n "$namespace" -o yaml \
+      > "{{ troubleshooting_cluster_dir }}/reproduction/pods/${pod_safe}.yaml" 2>&1 || true
+
+    owners=$(kubectl get pod "$pod" -n "$namespace" \
+      -o jsonpath='{range .metadata.ownerReferences[*]}{.kind}:{.name}{"\n"}{end}' || true)
+
+    for owner in $owners; do
+      kind="${owner%%:*}"
+      name="${owner##*:}"
+      if [ -z "$kind" ] || [ -z "$name" ]; then
+        continue
+      fi
+
+      resource=$(echo "$kind" | tr '[:upper:]' '[:lower:]')
+      owner_safe=$(printf '%s-%s-%s' "$namespace" "$kind" "$name" | sed 's/[^A-Za-z0-9_.-]/_/g')
+
+      if [ ! -f "{{ troubleshooting_cluster_dir }}/reproduction/owners/${owner_safe}.yaml" ]; then
+        kubectl get "$resource" "$name" -n "$namespace" -o yaml \
+          > "{{ troubleshooting_cluster_dir }}/reproduction/owners/${owner_safe}.yaml" 2>&1 || true
+
+        if [ "$kind" = "ReplicaSet" ]; then
+          parents=$(kubectl get replicaset "$name" -n "$namespace" \
+            -o jsonpath='{range .metadata.ownerReferences[*]}{.kind}:{.name}{"\n"}{end}' || true)
+          for parent in $parents; do
+            pkind="${parent%%:*}"
+            pname="${parent##*:}"
+            if [ -z "$pkind" ] || [ -z "$pname" ]; then
+              continue
+            fi
+
+            presource=$(echo "$pkind" | tr '[:upper:]' '[:lower:]')
+            parent_safe=$(printf '%s-%s-%s' "$namespace" "$pkind" "$pname" | sed 's/[^A-Za-z0-9_.-]/_/g')
+            if [ ! -f "{{ troubleshooting_cluster_dir }}/reproduction/owners/${parent_safe}.yaml" ]; then
+              kubectl get "$presource" "$pname" -n "$namespace" -o yaml \
+                > "{{ troubleshooting_cluster_dir }}/reproduction/owners/${parent_safe}.yaml" 2>&1 || true
+            fi
+          done
+        fi
+      fi
+    done
+  args:
+    executable: /bin/bash
+  loop: "{{ troubleshooting_non_running_pod_objects | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.namespace }}/{{ item.metadata.name }}"
+  when: troubleshooting_non_running_pod_objects | default([]) | length > 0
+  changed_when: true
+
+- name: Gather diagnostic pods for selectors
+  ansible.builtin.shell: |
+    set -o pipefail
+    kubectl get pods -n {{ item.namespace }} -l "{{ item.selector }}" \
+      -o jsonpath='{range .items[*]}{.metadata.namespace} {.metadata.name}{"\n"}{end}'
+  args:
+    executable: /bin/bash
+  register: troubleshooting_selector_pods
+  loop: "{{ troubleshooting_log_selectors }}"
+  loop_control:
+    label: "{{ item.name }}"
+  failed_when: false
+  changed_when: false
+
+- name: Reset selector pod mappings
+  ansible.builtin.set_fact:
+    troubleshooting_selector_results: []
+  changed_when: false
+
+- name: Build selector pod mappings
+  ansible.builtin.set_fact:
+    troubleshooting_selector_results: "{{ (troubleshooting_selector_results | default([])) + [ {'definition': item.item, 'pods': item.stdout_lines | default([])} ] }}"
+  loop: "{{ troubleshooting_selector_pods.results }}"
+  changed_when: false
+
+- name: Capture logs for selector matched pods
+  ansible.builtin.shell: |
+    set -o pipefail
+    namespace=$(echo "{{ item.1 }}" | awk '{print $1}')
+    pod_name=$(echo "{{ item.1 }}" | awk '{print $2}')
+    if [ -n "$pod_name" ]; then
+      safe_name=$(printf '%s-%s-%s' "{{ item.0.definition.name }}" "$namespace" "$pod_name" | sed 's/[^A-Za-z0-9_.-]/_/g')
+      kubectl logs "$pod_name" -n "$namespace" --all-containers --tail={{ troubleshooting_pod_log_tail_lines }} \
+        > "{{ troubleshooting_cluster_dir }}/logs/${safe_name}.log" 2>&1 || true
+    fi
+  args:
+    executable: /bin/bash
+  loop: "{{ (troubleshooting_selector_results | default([])) | subelements('pods') }}"
+  loop_control:
+    label: "{{ item.0.definition.name }}: {{ item.1 }}"
+  when: (troubleshooting_selector_results | default([])) | length > 0
+  changed_when: true
+
+- name: Execute controlled restarts when requested
+  ansible.builtin.shell: |
+    set -o pipefail
+    safe_name=$(printf '%s-%s' "{{ item.namespace }}" "{{ item.resource }}" | sed 's/[^A-Za-z0-9_.-]/_/g')
+    kubectl rollout restart {{ item.resource }} -n {{ item.namespace }} \
+      > "{{ troubleshooting_cluster_dir }}/restarts/${safe_name}.txt" 2>&1
+  args:
+    executable: /bin/bash
+  loop: "{{ troubleshooting_restart_resources }}"
+  loop_control:
+    label: "{{ item.namespace }}/{{ item.resource }}"
+  when: troubleshooting_enable_restarts | bool and (troubleshooting_restart_resources | length > 0)
+  changed_when: true
+
+- name: Package cluster diagnostics
+  ansible.builtin.shell: |
+    set -o pipefail
+    tar -czf "{{ troubleshooting_cluster_dir }}.tar.gz" -C "{{ troubleshooting_cluster_dir | dirname }}" "{{ troubleshooting_cluster_dir | basename }}"
+  args:
+    executable: /bin/bash
+  changed_when: true
+
+- name: Register cluster diagnostics tarball path
+  ansible.builtin.set_fact:
+    troubleshooting_cluster_tarball: "{{ troubleshooting_cluster_dir }}.tar.gz"
