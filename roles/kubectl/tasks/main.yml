@@ -1,0 +1,28 @@
+---
+- name: Validate requested kubectl action
+  ansible.builtin.assert:
+    that:
+      - kubectl_action is defined
+      - kubectl_action | string | length > 0
+      - kubectl_action in kubectl_supported_actions
+    fail_msg: >-
+      Unsupported kubectl_action "{{ kubectl_action | default('<undefined>') }}". Supported actions:
+      {{ kubectl_supported_actions | join(', ') }}.
+
+- name: Resolve kubectl target node
+  ansible.builtin.set_fact:
+    kubectl_target_node: "{{ kubectl_node | default(kube_node_name | default(inventory_hostname)) }}"
+
+- name: Resolve kubectl delegate host
+  ansible.builtin.set_fact:
+    kubectl_delegate_host: >-
+      {{
+        (
+          kubectl_delegate is defined and
+          (kubectl_delegate | string | length > 0)
+        )
+        | ternary(kubectl_delegate, kube_kubectl_delegate)
+      }}
+
+- name: Include action handler
+  ansible.builtin.include_tasks: "actions/{{ kubectl_action }}.yml"

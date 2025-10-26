@@ -1,0 +1,9 @@
+---
+galaxy_info:
+  author: Platform Engineering
+  description: Helper role to execute kubectl actions against RKE2 clusters.
+  company: Example Corp
+  license: MIT
+  min_ansible_version: "2.12"
+
+dependencies: []

@@ -1,0 +1,24 @@
+---
+- name: Query schedulability for {{ kubectl_target_node }}
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - get
+      - node
+      - "{{ kubectl_target_node }}"
+      - "-o"
+      - "jsonpath={.spec.unschedulable}"
+  delegate_to: "{{ kubectl_delegate_host }}"
+  register: kubectl_result
+  changed_when: false
+  failed_when: kubectl_result.rc != 0
+  timeout: "{{ kubectl_status_timeout }}"
+
+- name: Cache schedulability fact for {{ kubectl_target_node }}
+  when: kubectl_cache_cordon_fact | bool
+  ansible.builtin.set_fact:
+    kube_node_is_cordoned: >-
+      {{
+        kubectl_result.stdout | default('false') | trim | lower
+        in ['true', '1', 'yes']
+      }}

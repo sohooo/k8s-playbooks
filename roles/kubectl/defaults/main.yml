@@ -1,0 +1,39 @@
+---
+# Default values for the kubectl role. Consumers can override these to
+# tailor kubectl interactions for their environment.
+
+# Action to execute. Supported values are defined in
+# kubectl_supported_actions.
+kubectl_action: ""
+
+# Node that kubectl should target. Defaults to the inventory host, falling
+# back to kube_node_name for backwards compatibility.
+kubectl_node: "{{ kube_node_name | default(inventory_hostname) }}"
+
+# Host that should execute kubectl commands. When unset the role falls back to
+# kube_kubectl_delegate, which calling playbooks already determine.
+kubectl_delegate: "{{ kube_kubectl_delegate | default(omit, true) }}"
+
+# General command timeout (in seconds) used by most kubectl invocations unless
+# a more specific timeout is provided.
+kubectl_command_timeout: "{{ kube_kubectl_command_timeout | default(300) }}"
+
+# Fine-grained timeouts and options for individual actions.
+kubectl_cordon_timeout: "{{ kubectl_command_timeout }}"
+kubectl_uncordon_timeout: "{{ kubectl_command_timeout }}"
+kubectl_status_timeout: "{{ kube_kubectl_command_timeout | default(120) }}"
+kubectl_drain_timeout: "{{ kube_drain_timeout | default('10m') }}"
+kubectl_drain_delete_emptydir_data: "{{ kube_drain_delete_emptydir_data | default(true) }}"
+kubectl_drain_include_daemonsets: "{{ kube_drain_include_daemonsets | default(true) }}"
+
+# Automatically refresh the kube_node_is_cordoned fact when appropriate so
+# existing playbooks continue to work unchanged.
+kubectl_cache_cordon_fact: true
+
+# Internal list of allowed actions. Override only when extending the role with
+# additional action task files.
+kubectl_supported_actions:
+  - cordon
+  - drain
+  - get_cordon_status
+  - uncordon

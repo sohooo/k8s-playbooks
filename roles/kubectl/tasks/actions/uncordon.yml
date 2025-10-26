@@ -1,0 +1,17 @@
+---
+- name: Uncordon {{ kubectl_target_node }}
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - uncordon
+      - "{{ kubectl_target_node }}"
+  delegate_to: "{{ kubectl_delegate_host }}"
+  register: kubectl_result
+  changed_when: true
+  failed_when: kubectl_result.rc != 0
+  timeout: "{{ kubectl_uncordon_timeout }}"
+
+- name: Cache scheduling state for {{ kubectl_target_node }}
+  when: kubectl_cache_cordon_fact | bool
+  ansible.builtin.set_fact:
+    kube_node_is_cordoned: false
