@@ -24,6 +24,52 @@ Both plays embed the same maintenance block directly in the playbook so that the
 
 Each Kubernetes interaction shells out to `kubectl` on the shared delegate host selected during `pre_tasks`, matching the behaviour administrators expect from manual maintenance.
 
+### Visual flow reference
+
+Mermaid diagrams render natively on GitHub and keep the sequential structure obvious without scrolling through task YAML.
+
+```mermaid
+flowchart TD
+    start(["Start maintenance block"]) --> cordon{"Node cordoned?"}
+    cordon -- "No" --> drain["Drain node via kubectl"]
+    cordon -- "Yes" --> puppet
+    drain --> puppet["Run Puppet agent in test mode"]
+    puppet --> dnf["Apply OS updates"]
+    dnf --> reboot["Reboot host"]
+    reboot --> postcheck{"Still cordoned?"}
+    postcheck -- "Yes" --> uncordon["Uncordon node"]
+    postcheck -- "No" --> complete(["Maintenance complete"])
+    uncordon --> complete
+```
+
+Because the play runs with `serial: 1`, the tasks above repeat for one node at a time. The following timeline shows how control-plane nodes finish before the workers when the default inventory ordering is preserved:
+
+```mermaid
+gantt
+    dateFormat  X
+    title  Serial maintenance execution
+    section Control-plane node A
+    Drain           :a1, 0, 1
+    Puppet          :a2, 1, 1
+    Updates         :a3, 2, 1
+    Reboot          :a4, 3, 1
+    Uncordon/check  :a5, 4, 1
+    section Control-plane node B
+    Drain           :b1, 5, 1
+    Puppet          :b2, 6, 1
+    Updates         :b3, 7, 1
+    Reboot          :b4, 8, 1
+    Uncordon/check  :b5, 9, 1
+    section Worker nodes (repeat)
+    Drain           :c1, 10, 1
+    Puppet          :c2, 11, 1
+    Updates         :c3, 12, 1
+    Reboot          :c4, 13, 1
+    Uncordon/check  :c5, 14, 1
+```
+
+Adjust the number of nodes or duration blocks to match your environment when presenting the diagram to stakeholders.
+
 > **Delegation note:** RKE2 worker nodes do not ship with `kubectl` or a KUBECONFIG. The helper task
 > (`tasks/common/select_kubectl_delegate.yml`) chooses the first healthy control-plane host and shares
 > it via the `kube_kubectl_delegate` fact so every node can delegate Kubernetes commands consistently.
