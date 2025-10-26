@@ -5,16 +5,11 @@
   serial: 1
   order: inventory
   any_errors_fatal: true  # Halt the play entirely if any task fails to allow manual debugging
-  environment:
-    KUBECONFIG: /etc/rancher/rke2/rke2.yaml
-    PATH: "/var/lib/rancher/rke2/bin:{{ ansible_env.PATH | default('/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin') }}"
   pre_tasks:
-    - name: Validate cluster scope before maintenance
-      ansible.builtin.import_tasks: tasks/common/ensure_single_cluster.yml
-
-    - name: Select kubectl delegate for this cluster
-      when: kube_kubectl_delegate is not defined
-      ansible.builtin.import_tasks: tasks/common/select_kubectl_delegate.yml
+    - name: Prepare kubectl helpers
+      ansible.builtin.include_role:
+        name: kubectl
+        tasks_from: setup
 
   tasks:
     - name: Run maintenance workflow

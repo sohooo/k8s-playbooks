@@ -5,6 +5,7 @@
       - kubectl
       - uncordon
       - "{{ kubectl_target_node }}"
+  environment: "{{ kubectl_environment }}"
   delegate_to: "{{ kubectl_delegate_host }}"
   register: kubectl_result
   changed_when: true

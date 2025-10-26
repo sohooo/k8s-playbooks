@@ -37,3 +37,14 @@ kubectl_supported_actions:
   - drain
   - get_cordon_status
   - uncordon
+
+# Location of the kubeconfig used for delegated kubectl calls.
+kubectl_kubeconfig_path: "/etc/rancher/rke2/rke2.yaml"
+
+# Directory that ships the kubectl binary on RKE2 nodes. Added to PATH so the
+# shell-based kubectl invocations work even when the host lacks a default
+# installation.
+kubectl_path_prefix: "/var/lib/rancher/rke2/bin"
+
+# Fallback PATH used when ansible_env.PATH is unavailable.
+kubectl_default_path: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"

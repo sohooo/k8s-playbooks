@@ -10,6 +10,7 @@
 - name: Wait for Kubernetes API to respond after reboot
   ansible.builtin.command: kubectl get --raw=/readyz
   register: kube_api_readiness_check
+  environment: "{{ kubectl_environment }}"
   delegate_to: "{{ kube_kubectl_delegate }}"
   retries: 60
   delay: 5
