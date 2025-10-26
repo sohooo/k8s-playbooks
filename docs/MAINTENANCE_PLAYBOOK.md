@@ -1,6 +1,6 @@
 # Maintenance Playbook Reference
 
-The `playbooks/maintenance.yml` file is the primary entry point for scheduled upkeep of the RKE2 clusters. A single play now targets all maintenance hosts and leans on the inventory hierarchy to keep control-plane and worker execution easy to understand.
+The `playbooks/maintenance.yml` file is the primary entry point for scheduled upkeep of the RKE2 clusters. A single play now targets all maintenance hosts and leans on the inventory hierarchy to keep control-plane and worker execution easy to understand. The heavy lifting lives in the shared [`roles/rke2`](../roles/rke2) role so the upgrade and maintenance workflows stay in sync.
 
 ## Execution order
 
@@ -12,7 +12,7 @@ The kubectl role's setup helpers continue to probe the inventory-defined control
 
 ## Task sequence
 
-Both plays embed the same maintenance block directly in the playbook so that the workflow remains visible without chasing extra task files. The block executes the following steps:
+The `rke2` role keeps the maintenance pipeline in [`roles/rke2/tasks/maintenance.yml`](../roles/rke2/tasks/maintenance.yml) so every playbook can reuse the same logic. The tasks execute the following steps:
 
 1. **Check cordon status** – Captures whether the node is already cordoned to avoid double-draining.
 2. **Drain if required** – Runs `kubectl drain` only when the node was schedulable.
@@ -22,7 +22,7 @@ Both plays embed the same maintenance block directly in the playbook so that the
 6. **Post-maintenance cordon check** – Confirms whether the node is still cordoned.
 7. **Uncordon if needed** – Runs `kubectl uncordon` when the previous check reports that the node remains unschedulable.
 
-Each Kubernetes interaction shells out to `kubectl` on the shared delegate host selected during the kubectl setup stage, matching the behaviour administrators expect from manual maintenance.
+Each Kubernetes interaction shells out to `kubectl` on the shared delegate host selected during the kubectl setup stage, matching the behaviour administrators expect from manual maintenance. Because the upgrade playbook uses the same role, any new safeguards or cordon-handling tweaks automatically apply to both entry points.
 
 ### Visual flow reference
 
@@ -77,7 +77,7 @@ Adjust the number of nodes or duration blocks to match your environment when pre
 
 ## Extending the workflow
 
-- Add new steps to the maintenance block in `playbooks/maintenance.yml` so every host role continues to share the same maintenance pipeline.
+- Add new steps to the maintenance block in `roles/rke2/tasks/maintenance.yml` so every host role continues to share the same maintenance pipeline.
 - For optional steps, prefer wrapping the included tasks in `block` statements with clear conditionals so the behaviour remains discoverable.
 - When a new maintenance action requires additional variables, document them in the task file and consider providing defaults in `group_vars`.
 
