@@ -25,8 +25,8 @@
     kube_kubectl_delegate_candidates_healthy: >-
       {{
         (kube_kubectl_delegate_candidate_results.results | default([]))
-        | rejectattr('failed', 'defined')
-        | rejectattr('unreachable', 'defined')
+        | selectattr('failed', 'undefined')
+        | selectattr('unreachable', 'undefined')
         | map(attribute='item')
         | list
       }}
@@ -43,10 +43,9 @@
 - name: Record selected kubectl delegate
   ansible.builtin.set_fact:
     kube_kubectl_delegate: "{{ kube_kubectl_delegate_candidates_healthy[0] }}"
-  delegate_to: "{{ ansible_play_hosts_all[0] }}"
+  loop: "{{ ansible_play_hosts_all }}"
+  loop_control:
+    label: "{{ item }}"
+  delegate_to: "{{ item }}"
   delegate_facts: true
   run_once: true
-
-- name: Share kubectl delegate with all hosts
-  ansible.builtin.set_fact:
-    kube_kubectl_delegate: "{{ hostvars[ansible_play_hosts_all[0]].kube_kubectl_delegate }}"
