@@ -4,7 +4,9 @@
     that:
       - hostvars[item].kube_cluster is defined
     fail_msg: >-
-      kube_cluster is not defined for {{ item }}. Update the inventory or limit the play to a specific cluster before running maintenance.
+      kube_cluster is not defined for {{ item }}. Set kube_cluster in the cluster's inventory
+      group vars (for example under [kube_<name>:vars] in inventories/hosts.ini) or limit the
+      play to a specific cluster before running maintenance.
   loop: "{{ ansible_play_hosts_all }}"
   loop_control:
     label: "{{ item }}"
