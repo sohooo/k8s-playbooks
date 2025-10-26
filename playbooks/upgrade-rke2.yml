@@ -98,8 +98,10 @@
       when: rke2_upgrade_required | bool
       block:
         - name: Capture node scheduling state before upgrade
-          ansible.builtin.include_tasks:
-            file: tasks/node/get_cordon_status.yml
+          ansible.builtin.include_role:
+            name: kubectl
+          vars:
+            kubectl_action: get_cordon_status
 
         - name: Remember original scheduling state
           ansible.builtin.set_fact:
@@ -110,12 +112,16 @@
 
         - name: Ensure node is cordoned before draining workloads
           when: not (kube_node_is_cordoned | default(false) | bool)
-          ansible.builtin.include_tasks:
-            file: tasks/node/cordon.yml
+          ansible.builtin.include_role:
+            name: kubectl
+          vars:
+            kubectl_action: cordon
 
         - name: Drain workloads from node before upgrade
-          ansible.builtin.include_tasks:
-            file: tasks/node/drain.yml
+          ansible.builtin.include_role:
+            name: kubectl
+          vars:
+            kubectl_action: drain
 
         - name: Stop RKE2 services before upgrade
           ansible.builtin.command:
@@ -137,13 +143,17 @@
             state: started
 
         - name: Refresh node scheduling state after upgrade
-          ansible.builtin.include_tasks:
-            file: tasks/node/get_cordon_status.yml
+          ansible.builtin.include_role:
+            name: kubectl
+          vars:
+            kubectl_action: get_cordon_status
 
         - name: Restore scheduling state when node was previously schedulable
           when: not (kube_node_was_cordoned | default(false) | bool)
-          ansible.builtin.include_tasks:
-            file: tasks/node/uncordon.yml
+          ansible.builtin.include_role:
+            name: kubectl
+          vars:
+            kubectl_action: uncordon
 
 - name: Upgrade RKE2 agent nodes
   hosts: kube_workers
@@ -243,8 +253,10 @@
       when: rke2_upgrade_required | bool
       block:
         - name: Capture node scheduling state before upgrade
-          ansible.builtin.include_tasks:
-            file: tasks/node/get_cordon_status.yml
+          ansible.builtin.include_role:
+            name: kubectl
+          vars:
+            kubectl_action: get_cordon_status
 
         - name: Remember original scheduling state
           ansible.builtin.set_fact:
@@ -255,12 +267,16 @@
 
         - name: Ensure node is cordoned before draining workloads
           when: not (kube_node_is_cordoned | default(false) | bool)
-          ansible.builtin.include_tasks:
-            file: tasks/node/cordon.yml
+          ansible.builtin.include_role:
+            name: kubectl
+          vars:
+            kubectl_action: cordon
 
         - name: Drain workloads from node before upgrade
-          ansible.builtin.include_tasks:
-            file: tasks/node/drain.yml
+          ansible.builtin.include_role:
+            name: kubectl
+          vars:
+            kubectl_action: drain
 
         - name: Stop RKE2 services before upgrade
           ansible.builtin.command:
@@ -282,10 +298,14 @@
             state: started
 
         - name: Refresh node scheduling state after upgrade
-          ansible.builtin.include_tasks:
-            file: tasks/node/get_cordon_status.yml
+          ansible.builtin.include_role:
+            name: kubectl
+          vars:
+            kubectl_action: get_cordon_status
 
         - name: Restore scheduling state when node was previously schedulable
           when: not (kube_node_was_cordoned | default(false) | bool)
-          ansible.builtin.include_tasks:
-            file: tasks/node/uncordon.yml
+          ansible.builtin.include_role:
+            name: kubectl
+          vars:
+            kubectl_action: uncordon

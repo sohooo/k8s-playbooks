@@ -1,0 +1,15 @@
+---
+- name: Drain {{ kubectl_target_node }}
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - drain
+      - "{{ kubectl_target_node }}"
+      - "--ignore-daemonsets={{ (kubectl_drain_include_daemonsets | bool) | ternary('false', 'true') }}"
+      - "--delete-emptydir-data={{ (kubectl_drain_delete_emptydir_data | bool) | ternary('true', 'false') }}"
+      - "--timeout={{ kubectl_drain_timeout }}"
+  delegate_to: "{{ kubectl_delegate_host }}"
+  register: kubectl_result
+  changed_when: true
+  failed_when: kubectl_result.rc != 0
+  timeout: "{{ kubectl_command_timeout }}"
