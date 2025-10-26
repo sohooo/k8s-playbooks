@@ -31,7 +31,7 @@ See [`docs/README.md`](docs/README.md) for deep dives into the playbook internal
 - Ansible 2.12+ (tested syntax)
 - Access to the target nodes with privilege escalation (`become`)
 - `kubectl` available on control-plane nodes (worker nodes delegate Kubernetes operations to a
-  control-plane host discovered during play `pre_tasks`)
+  control-plane host discovered during the kubectl role's setup helpers)
 
 ## Local development setup
 
@@ -56,7 +56,7 @@ ansible-lint --version
 > **Tip:** Activate the virtual environment (`source .venv/bin/activate`) in every new shell before running the commands below so
 > that the installed tooling is available.
 
-Ensure the selected kubectl delegate (a control-plane host discovered during play `pre_tasks`) can reach the Kubernetes API and has `kubectl` available in `/var/lib/rancher/rke2/bin`.
+Ensure the selected kubectl delegate (a control-plane host discovered during the kubectl setup helpers) can reach the Kubernetes API and has `kubectl` available in `/var/lib/rancher/rke2/bin`.
 
 ## Usage
 

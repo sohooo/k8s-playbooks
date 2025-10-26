@@ -5,15 +5,11 @@
   serial: 1
   vars:
     kube_node_is_control_plane: "{{ controlplane | default(false) | bool }}"
-  environment:
-    KUBECONFIG: /etc/rancher/rke2/rke2.yaml
-    PATH: "/var/lib/rancher/rke2/bin:{{ ansible_env.PATH | default('/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin') }}"
   pre_tasks:
-    - name: Validate cluster scope before labeling
-      ansible.builtin.import_tasks: tasks/common/ensure_single_cluster.yml
-
-    - name: Select kubectl delegate for this cluster
-      ansible.builtin.import_tasks: tasks/common/select_kubectl_delegate.yml
+    - name: Prepare kubectl helpers
+      ansible.builtin.include_role:
+        name: kubectl
+        tasks_from: setup
 
   tasks:
     - name: Count NVIDIA devices with lspci
@@ -44,6 +40,7 @@
           - "{{ kube_node_name | default(inventory_hostname) }}"
           - -o
           - jsonpath={.metadata.labels.gpu}
+      environment: "{{ kubectl_environment }}"
       delegate_to: "{{ kube_kubectl_delegate }}"
       register: kube_node_gpu_label_result
       changed_when: false
@@ -59,6 +56,7 @@
           - "{{ kube_node_name | default(inventory_hostname) }}"
           - "gpu={{ gpu_label_desired }}"
           - --overwrite
+      environment: "{{ kubectl_environment }}"
       delegate_to: "{{ kube_kubectl_delegate }}"
       changed_when: true
       when: (kube_node_gpu_label_result.stdout | default('')) != gpu_label_desired

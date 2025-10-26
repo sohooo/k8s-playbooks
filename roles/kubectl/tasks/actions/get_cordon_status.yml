@@ -8,6 +8,7 @@
       - "{{ kubectl_target_node }}"
       - "-o"
       - "jsonpath={.spec.unschedulable}"
+  environment: "{{ kubectl_environment }}"
   delegate_to: "{{ kubectl_delegate_host }}"
   register: kubectl_result
   changed_when: false

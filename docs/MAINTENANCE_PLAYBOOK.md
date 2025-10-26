@@ -8,7 +8,7 @@ The `playbooks/maintenance.yml` file is the primary entry point for scheduled up
 2. **Ordering:** `order: inventory` preserves the inventory ordering of the aggregate groups. Because the `kube_nodes` group lists `kube_control_plane` before `kube_workers`, all control-plane hosts complete first, followed by their worker counterparts.
 3. **Serial maintenance:** With `serial: 1` the workflow finishes on one host before advancing to the next, matching the original behaviour while avoiding duplicate plays.
 
-The shared `select_kubectl_delegate` helper continues to probe the inventory-defined control-plane group to select a healthy delegate for Kubernetes commands. Control-plane hosts already ship with a kubeconfig, while worker nodes rely on the delegate fact populated during `pre_tasks`.
+The kubectl role's setup helpers continue to probe the inventory-defined control-plane group to select a healthy delegate for Kubernetes commands. Control-plane hosts already ship with a kubeconfig, while worker nodes rely on the delegate fact populated during that setup stage.
 
 ## Task sequence
 
@@ -22,7 +22,7 @@ Both plays embed the same maintenance block directly in the playbook so that the
 6. **Post-maintenance cordon check** – Confirms whether the node is still cordoned.
 7. **Uncordon if needed** – Runs `kubectl uncordon` when the previous check reports that the node remains unschedulable.
 
-Each Kubernetes interaction shells out to `kubectl` on the shared delegate host selected during `pre_tasks`, matching the behaviour administrators expect from manual maintenance.
+Each Kubernetes interaction shells out to `kubectl` on the shared delegate host selected during the kubectl setup stage, matching the behaviour administrators expect from manual maintenance.
 
 ### Visual flow reference
 
@@ -70,9 +70,10 @@ gantt
 
 Adjust the number of nodes or duration blocks to match your environment when presenting the diagram to stakeholders.
 
-> **Delegation note:** RKE2 worker nodes do not ship with `kubectl` or a KUBECONFIG. The helper task
-> (`tasks/common/select_kubectl_delegate.yml`) chooses the first healthy control-plane host and shares
-> it via the `kube_kubectl_delegate` fact so every node can delegate Kubernetes commands consistently.
+> **Delegation note:** RKE2 worker nodes do not ship with `kubectl` or a KUBECONFIG. The kubectl role
+> includes the `tasks/common/select_kubectl_delegate.yml` helper, which chooses the first healthy
+> control-plane host and shares it via the `kube_kubectl_delegate` fact so every node can delegate
+> Kubernetes commands consistently.
 
 ## Extending the workflow
 

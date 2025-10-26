@@ -8,6 +8,7 @@
       - "--ignore-daemonsets={{ (kubectl_drain_include_daemonsets | bool) | ternary('false', 'true') }}"
       - "--delete-emptydir-data={{ (kubectl_drain_delete_emptydir_data | bool) | ternary('true', 'false') }}"
       - "--timeout={{ kubectl_drain_timeout }}"
+  environment: "{{ kubectl_environment }}"
   delegate_to: "{{ kubectl_delegate_host }}"
   register: kubectl_result
   changed_when: true

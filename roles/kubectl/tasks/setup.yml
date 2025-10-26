@@ -1,0 +1,24 @@
+---
+- name: Prepare kubectl delegation context
+  when: not (kubectl_setup_complete | default(false))
+  block:
+    - name: Validate cluster scope before kubectl operations
+      ansible.builtin.include_tasks: "{{ role_path }}/../../playbooks/tasks/common/ensure_single_cluster.yml"
+
+    - name: Select kubectl delegate for this cluster
+      when: kube_kubectl_delegate is not defined
+      ansible.builtin.include_tasks: "{{ role_path }}/../../playbooks/tasks/common/select_kubectl_delegate.yml"
+
+    - name: Record kubectl execution environment
+      ansible.builtin.set_fact:
+        kubectl_environment:
+          KUBECONFIG: "{{ kubectl_kubeconfig_path }}"
+          PATH: "{{ kubectl_path_prefix ~ ':' ~ (ansible_env.PATH | default(kubectl_default_path)) }}"
+        kubectl_setup_complete: true
+
+- name: Ensure kubectl environment fact is present
+  when: kubectl_environment is not defined
+  ansible.builtin.set_fact:
+    kubectl_environment:
+      KUBECONFIG: "{{ kubectl_kubeconfig_path }}"
+      PATH: "{{ kubectl_path_prefix ~ ':' ~ (ansible_env.PATH | default(kubectl_default_path)) }}"

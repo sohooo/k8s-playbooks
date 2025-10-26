@@ -1,4 +1,6 @@
----
+- name: Initialise kubectl helpers
+  ansible.builtin.include_tasks: setup.yml
+
 - name: Validate requested kubectl action
   ansible.builtin.assert:
     that:
