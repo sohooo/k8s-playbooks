@@ -96,3 +96,38 @@ When a drain times out or hangs, take the following recovery steps:
 2. Check for pod disruption budgets (`kubectl get pdb -A`) that may prevent voluntary disruption. Temporarily raise their `maxUnavailable` or delete them while maintenance is in progress.
 3. If the playbook aborted midway, run `kubectl uncordon <node>` to restore scheduling and return the cluster to a healthy state before retrying.
 4. After resolving the blockers, rerun the maintenance play. The drain task will respect the configured timeouts and fail fast when pods are still preventing eviction, allowing manual intervention without leaving the node cordoned indefinitely.
+
+## Troubleshooting Cilium networking
+
+`cilium` and `hubble` CLI utilities ship with the maintenance hosts, so you can collect rich dataplane diagnostics without leaving the playbook environment:
+
+- Start by checking the overall health of the dataplane:
+  - `cilium status --wait` confirms that the agents, operator, and clustermesh components are healthy before you dig deeper.
+  - `cilium status --verbose` surfaces component-level warnings (e.g. failing controllers) that can explain intermittent behaviour.
+- Inspect connectivity flows with Hubble:
+  - `hubble status` validates that relay and UI instances are reachable.
+  - `hubble observe --from-pod <ns>/<pod> --follow` streams live flows from a problematic workload so you can spot drops or policy denies in real time.
+  - `hubble observe --protocol l7 --last 20` provides the latest layer-7 transactions and is useful when HTTP/gRPC requests appear to hang.
+- Capture a point-in-time snapshot with `cilium sysdump --output ./cilium-sysdump-$(date +%s)` so the networking team can review logs, policy state, and BPF maps offline.
+- Verify CNI-critical Kubernetes objects:
+  - `kubectl -n kube-system get pods -l k8s-app=cilium` ensures all Cilium agents are running and restarts haven't introduced churn.
+  - `kubectl -n kube-system get configmap cilium-config -o yaml` confirms no unexpected configuration drift is forcing the agents into a bad state.
+
+When you open an incident or escalate to the networking team, include the `cilium status` output, any `hubble observe` snippets that show packet drops, and the sysdump archive to accelerate triage.
+
+## Troubleshooting Envoy Gateway
+
+Use `kubectl` plus the Envoy Gateway CRDs to spot routing problems quickly:
+
+- Confirm the managed gateway is healthy:
+  - `kubectl -n kube-system get gateways.gateway.networking.k8s.io gw-default -o yaml` reveals status conditions and listener readiness for the `gw-default` instance.
+  - `kubectl -n kube-system describe gateway gw-default` highlights any attached events such as certificate or deployment failures.
+- Review all managed routes:
+  - `kubectl get httproutes.gateway.networking.k8s.io -A -o wide` lists every HTTPRoute with their parentRefs so you can see which ones bind to `gw-default`.
+  - `kubectl describe httproute.gateway.networking.k8s.io <namespace>/<name>` provides per-route condition statuses and backend errors when traffic is misrouted.
+- Inspect supporting deployments:
+  - `kubectl -n envoy-gateway-system get pods` (or your chosen namespace) makes sure the Envoy Gateway controller and data plane pods are running.
+  - `kubectl -n envoy-gateway-system logs deploy/envoy-gateway --tail=200` catches reconciliation failures when Gateway API resources refuse to program the dataplane.
+- For TLS issues, verify referenced secrets exist and are readable: `kubectl -n <route-namespace> get secret <tls-secret>`.
+
+Capture the gateway status output, relevant HTTPRoute descriptions, and recent controller logs when escalating. They provide enough context for the ingress team to reproduce and resolve the misconfiguration.

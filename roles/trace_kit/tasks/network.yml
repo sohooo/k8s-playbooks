@@ -1,0 +1,45 @@
+---
+- name: Run traceroute against each target
+  ansible.builtin.shell: |
+    set -o pipefail
+    {% set target_label = (item.name | default(item.address)) | regex_replace('[^A-Za-z0-9_.-]', '_') %}
+    output_file="{{ trace_kit_node_dir }}/network/{{ target_label }}-traceroute.txt"
+    traceroute {{ trace_kit_traceroute_options }} {{ item.address }} \
+      > "$output_file" 2>&1 || true
+  args:
+    executable: /bin/bash
+  loop: "{{ trace_kit_targets }}"
+  loop_control:
+    label: "{{ item.name | default(item.address) }}"
+  when: trace_kit_targets | length > 0
+  changed_when: true
+
+- name: Run ping against each target
+  ansible.builtin.shell: |
+    set -o pipefail
+    {% set target_label = (item.name | default(item.address)) | regex_replace('[^A-Za-z0-9_.-]', '_') %}
+    output_file="{{ trace_kit_node_dir }}/network/{{ target_label }}-ping.txt"
+    ping -c {{ trace_kit_ping_count }} {{ item.address }} \
+      > "$output_file" 2>&1 || true
+  args:
+    executable: /bin/bash
+  loop: "{{ trace_kit_targets }}"
+  loop_control:
+    label: "{{ item.name | default(item.address) }}"
+  when: trace_kit_targets | length > 0
+  changed_when: true
+
+- name: Run curl checks against each target
+  ansible.builtin.shell: |
+    set -o pipefail
+    {% set target_label = (item.name | default(item.address)) | regex_replace('[^A-Za-z0-9_.-]', '_') %}
+    output_file="{{ trace_kit_node_dir }}/network/{{ target_label }}-curl.txt"
+    curl {{ trace_kit_curl_extra_args }} --write-out '{{ trace_kit_curl_format }}' "{{ item.address }}" \
+      > "$output_file" 2>&1 || true
+  args:
+    executable: /bin/bash
+  loop: "{{ trace_kit_targets }}"
+  loop_control:
+    label: "{{ item.name | default(item.address) }}"
+  when: trace_kit_targets | length > 0
+  changed_when: true

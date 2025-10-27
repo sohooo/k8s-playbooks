@@ -1,0 +1,486 @@
+---
+- name: Prepare cluster diagnostics directories
+  ansible.builtin.set_fact:
+    trace_kit_cluster_dir: "{{ trace_kit_remote_parent_dir }}/{{ trace_kit_run_id }}/cluster"
+
+- name: Create cluster diagnostics directories
+  ansible.builtin.file:
+    path: "{{ trace_kit_cluster_dir }}/{{ item }}"
+    state: directory
+    mode: "0750"
+  loop:
+    - logs
+    - services
+    - pods
+    - restarts
+    - reproduction
+    - cilium
+    - envoy-gateway
+
+- name: Create reproduction data directories
+  ansible.builtin.file:
+    path: "{{ trace_kit_cluster_dir }}/reproduction/{{ item }}"
+    state: directory
+    mode: "0750"
+  loop:
+    - pods
+    - owners
+
+- name: Create Cilium diagnostics directories
+  ansible.builtin.file:
+    path: "{{ trace_kit_cluster_dir }}/cilium/{{ item }}"
+    state: directory
+    mode: "0750"
+  loop:
+    - hubble
+    - sysdump
+
+- name: Create Envoy Gateway diagnostics directories
+  ansible.builtin.file:
+    path: "{{ trace_kit_cluster_dir }}/envoy-gateway/{{ item }}"
+    state: directory
+    mode: "0750"
+  loop:
+    - routes
+
+- name: Capture cluster node overview
+  ansible.builtin.shell: |
+    set -o pipefail
+    kubectl get nodes -o wide > "{{ trace_kit_cluster_dir }}/nodes.txt" 2>&1
+  args:
+    executable: /bin/bash
+  changed_when: true
+  failed_when: false
+
+- name: Capture cluster pod overview
+  ansible.builtin.shell: |
+    set -o pipefail
+    kubectl get pods -A -o wide > "{{ trace_kit_cluster_dir }}/pods.txt" 2>&1
+  args:
+    executable: /bin/bash
+  changed_when: true
+  failed_when: false
+
+- name: Capture cluster events
+  ansible.builtin.shell: |
+    set -o pipefail
+    kubectl get events -A --sort-by=.lastTimestamp > "{{ trace_kit_cluster_dir }}/events.txt" 2>&1
+  args:
+    executable: /bin/bash
+  changed_when: true
+  failed_when: false
+
+- name: Check for cilium CLI availability
+  ansible.builtin.command: cilium version
+  register: trace_kit_cilium_cli_check
+  changed_when: false
+  failed_when: false
+
+- name: Check for Hubble CLI availability
+  ansible.builtin.command: hubble version
+  register: trace_kit_hubble_cli_check
+  changed_when: false
+  failed_when: false
+
+- name: Capture Cilium status reports
+  ansible.builtin.shell: |
+    set -o pipefail
+    {
+      echo "# cilium status --wait"
+      timeout {{ trace_kit_cilium_status_timeout_seconds }} cilium status --wait || true
+      echo
+      echo "# cilium status --verbose"
+      cilium status --verbose || true
+    } > "{{ trace_kit_cluster_dir }}/cilium/status.txt" 2>&1
+  args:
+    executable: /bin/bash
+  when: trace_kit_cilium_cli_check.rc == 0
+  changed_when: true
+  failed_when: false
+
+- name: Capture Cilium agent pod inventory
+  ansible.builtin.shell: |
+    set -o pipefail
+    kubectl -n kube-system get pods -l k8s-app=cilium -o wide \
+      > "{{ trace_kit_cluster_dir }}/cilium/agent-pods.txt" 2>&1
+  args:
+    executable: /bin/bash
+  changed_when: true
+  failed_when: false
+
+- name: Capture Cilium configuration
+  ansible.builtin.shell: |
+    set -o pipefail
+    kubectl -n kube-system get configmap cilium-config -o yaml \
+      > "{{ trace_kit_cluster_dir }}/cilium/configmap.yaml" 2>&1
+  args:
+    executable: /bin/bash
+  changed_when: true
+  failed_when: false
+
+- name: Capture Hubble status
+  ansible.builtin.shell: |
+    set -o pipefail
+    {
+      echo "# hubble status"
+      hubble status || true
+    } > "{{ trace_kit_cluster_dir }}/cilium/hubble/status.txt" 2>&1
+  args:
+    executable: /bin/bash
+  when: trace_kit_hubble_cli_check.rc == 0
+  changed_when: true
+  failed_when: false
+
+- name: Capture recent Hubble L7 flows
+  ansible.builtin.shell: |
+    set -o pipefail
+    hubble observe --protocol l7 --last {{ trace_kit_hubble_observe_last }} \
+      > "{{ trace_kit_cluster_dir }}/cilium/hubble/recent-l7-flows.txt" 2>&1 || true
+  args:
+    executable: /bin/bash
+  when: trace_kit_hubble_cli_check.rc == 0
+  changed_when: true
+  failed_when: false
+
+- name: Collect Cilium sysdump archive
+  ansible.builtin.shell: |
+    set -o pipefail
+    cilium sysdump --output cilium-sysdump \
+      > "{{ trace_kit_cluster_dir }}/cilium/sysdump/sysdump.log" 2>&1 || true
+  args:
+    executable: /bin/bash
+    chdir: "{{ trace_kit_cluster_dir }}/cilium/sysdump"
+  when: trace_kit_cilium_cli_check.rc == 0
+  changed_when: true
+  failed_when: false
+
+- name: Capture Envoy Gateway gateway status
+  ansible.builtin.shell: |
+    set -o pipefail
+    kubectl -n kube-system get gateways.gateway.networking.k8s.io gw-default -o yaml \
+      > "{{ trace_kit_cluster_dir }}/envoy-gateway/gateway-gw-default.yaml" 2>&1
+  args:
+    executable: /bin/bash
+  changed_when: true
+  failed_when: false
+
+- name: Describe Envoy Gateway gw-default resource
+  ansible.builtin.shell: |
+    set -o pipefail
+    kubectl -n kube-system describe gateway gw-default \
+      > "{{ trace_kit_cluster_dir }}/envoy-gateway/gateway-gw-default.describe" 2>&1
+  args:
+    executable: /bin/bash
+  changed_when: true
+  failed_when: false
+
+- name: Capture Envoy Gateway HTTPRoute inventory
+  ansible.builtin.shell: |
+    set -o pipefail
+    kubectl get httproutes.gateway.networking.k8s.io -A -o wide \
+      > "{{ trace_kit_cluster_dir }}/envoy-gateway/httproutes.txt" 2>&1
+  args:
+    executable: /bin/bash
+  changed_when: true
+  failed_when: false
+
+- name: Gather Envoy Gateway HTTPRoute identifiers
+  ansible.builtin.shell: |
+    set -o pipefail
+    kubectl get httproutes.gateway.networking.k8s.io -A \
+      -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\n"}{end}'
+  args:
+    executable: /bin/bash
+  register: trace_kit_envoy_gateway_routes
+  changed_when: false
+  failed_when: false
+
+- name: Describe Envoy Gateway HTTPRoutes
+  ansible.builtin.shell: |
+    set -o pipefail
+    route_safe=$(echo "{{ item }}" | sed 's|/|-|g')
+    kubectl describe httproute.gateway.networking.k8s.io {{ item }} \
+      > "{{ trace_kit_cluster_dir }}/envoy-gateway/routes/${route_safe}.describe" 2>&1 || true
+  args:
+    executable: /bin/bash
+  loop: "{{ trace_kit_envoy_gateway_routes.stdout_lines | default([]) }}"
+  loop_control:
+    label: "{{ item }}"
+  when: (trace_kit_envoy_gateway_routes.stdout_lines | default([])) | length > 0
+  changed_when: true
+  failed_when: false
+
+- name: Capture Envoy Gateway controller pods
+  ansible.builtin.shell: |
+    set -o pipefail
+    kubectl -n {{ trace_kit_envoy_gateway_namespace }} get pods -o wide \
+      > "{{ trace_kit_cluster_dir }}/envoy-gateway/controller-pods.txt" 2>&1
+  args:
+    executable: /bin/bash
+  changed_when: true
+  failed_when: false
+
+- name: Capture Envoy Gateway controller logs
+  ansible.builtin.shell: |
+    set -o pipefail
+    kubectl -n {{ trace_kit_envoy_gateway_namespace }} \
+      logs deploy/{{ trace_kit_envoy_gateway_deployment }} \
+      --tail={{ trace_kit_envoy_gateway_log_tail_lines }} \
+      > "{{ trace_kit_cluster_dir }}/envoy-gateway/controller-logs.txt" 2>&1 || true
+  args:
+    executable: /bin/bash
+  changed_when: true
+  failed_when: false
+
+- name: Capture services and endpoints for flagged namespaces
+  ansible.builtin.shell: |
+    set -o pipefail
+    {
+      echo "# kubectl get svc -n {{ item }} -o wide"
+      kubectl get svc -n {{ item }} -o wide
+      echo
+      echo "# kubectl get endpoints -n {{ item }} -o wide"
+      kubectl get endpoints -n {{ item }} -o wide
+    } > "{{ trace_kit_cluster_dir }}/services/{{ item | regex_replace('[^A-Za-z0-9_.-]', '_') }}-services-endpoints.txt" 2>&1
+  args:
+    executable: /bin/bash
+  loop: "{{ trace_kit_flagged_namespaces }}"
+  loop_control:
+    label: "{{ item }}"
+  changed_when: true
+  failed_when: false
+
+- name: Capture service descriptions for flagged namespaces
+  ansible.builtin.shell: |
+    set -o pipefail
+    for svc in $(kubectl get svc -n {{ item }} -o name); do
+      svc_safe=$(echo "$svc" | sed 's|/|-|g')
+      svc_output="{{ trace_kit_cluster_dir }}/services/{{ item | regex_replace('[^A-Za-z0-9_.-]', '_') }}-${svc_safe}.describe"
+      kubectl describe "$svc" -n {{ item }} > "$svc_output" 2>&1 || true
+    done
+  args:
+    executable: /bin/bash
+  loop: "{{ trace_kit_flagged_namespaces }}"
+  loop_control:
+    label: "{{ item }}"
+  changed_when: true
+  failed_when: false
+
+- name: Capture endpoint descriptions for flagged namespaces
+  ansible.builtin.shell: |
+    set -o pipefail
+    for ep in $(kubectl get endpoints -n {{ item }} -o name); do
+      ep_safe=$(echo "$ep" | sed 's|/|-|g')
+      ep_output="{{ trace_kit_cluster_dir }}/services/{{ item | regex_replace('[^A-Za-z0-9_.-]', '_') }}-${ep_safe}.describe"
+      kubectl describe "$ep" -n {{ item }} > "$ep_output" 2>&1 || true
+    done
+  args:
+    executable: /bin/bash
+  loop: "{{ trace_kit_flagged_namespaces }}"
+  loop_control:
+    label: "{{ item }}"
+  changed_when: true
+  failed_when: false
+
+- name: Record pods that are not running
+  ansible.builtin.shell: |
+    set -o pipefail
+    kubectl get pods -A --field-selector=status.phase!=Running -o wide > "{{ trace_kit_cluster_dir }}/pods/not-running.txt" 2>&1
+  args:
+    executable: /bin/bash
+  changed_when: true
+  failed_when: false
+
+- name: Collect non-running pod inventory
+  ansible.builtin.shell: |
+    set -o pipefail
+    kubectl get pods -A --field-selector=status.phase!=Running -o json
+  register: trace_kit_non_running_pods_raw
+  changed_when: false
+  failed_when: false
+
+- name: Parse non-running pod inventory
+  ansible.builtin.set_fact:
+    trace_kit_non_running_pod_objects: >-
+      {{
+        (
+          (trace_kit_non_running_pods_raw.stdout | default('{"items": []}'))
+          | from_json
+        ).get('items', [])
+      }}
+
+- name: Ensure non-running pod inventory defaults to an empty list
+  ansible.builtin.set_fact:
+    trace_kit_non_running_pod_objects: "{{ trace_kit_non_running_pod_objects | default([]) }}"
+
+- name: Capture diagnostics for pods that are not running
+  ansible.builtin.shell: |
+    set -o pipefail
+    namespace="{{ item.metadata.namespace }}"
+    pod="{{ item.metadata.name | default('') }}"
+    if [ -n "$namespace" ] && [ -n "$pod" ]; then
+      safe_name=$(printf '%s-%s' "$namespace" "$pod" | sed 's/[^A-Za-z0-9_.-]/_/g')
+      {
+        echo "# kubectl describe pod $namespace/$pod"
+        kubectl describe pod "$pod" -n "$namespace" || true
+        echo
+        echo "# kubectl logs --all-containers"
+        kubectl logs "$pod" -n "$namespace" --all-containers --tail={{ trace_kit_pod_log_tail_lines }} || true
+        echo
+        echo "# kubectl logs --all-containers --previous"
+        kubectl logs "$pod" -n "$namespace" --all-containers --tail={{ trace_kit_pod_log_tail_lines }} --previous || true
+      } > "{{ trace_kit_cluster_dir }}/pods/${safe_name}.txt" 2>&1
+    fi
+  args:
+    executable: /bin/bash
+  loop: "{{ trace_kit_non_running_pod_objects | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.namespace }}/{{ item.metadata.name }}"
+  when: trace_kit_non_running_pod_objects | default([]) | length > 0
+  changed_when: true
+
+- name: Capture manifests for non-running pods and their owners
+  ansible.builtin.shell: |
+    set -o pipefail
+    namespace="{{ item.metadata.namespace }}"
+    pod="{{ item.metadata.name | default('') }}"
+    if [ -z "$namespace" ] || [ -z "$pod" ]; then
+      exit 0
+    fi
+
+    pod_safe=$(printf '%s-%s' "$namespace" "$pod" | sed 's/[^A-Za-z0-9_.-]/_/g')
+    kubectl get pod "$pod" -n "$namespace" -o yaml \
+      > "{{ trace_kit_cluster_dir }}/reproduction/pods/${pod_safe}.yaml" 2>&1 || true
+
+    owners=$(kubectl get pod "$pod" -n "$namespace" \
+      -o jsonpath='{range .metadata.ownerReferences[*]}{.kind}:{.name}{"\n"}{end}' || true)
+
+    for owner in $owners; do
+      kind="${owner%%:*}"
+      name="${owner##*:}"
+      if [ -z "$kind" ] || [ -z "$name" ]; then
+        continue
+      fi
+
+      resource=$(echo "$kind" | tr '[:upper:]' '[:lower:]')
+      owner_safe=$(printf '%s-%s-%s' "$namespace" "$kind" "$name" | sed 's/[^A-Za-z0-9_.-]/_/g')
+
+      if [ ! -f "{{ trace_kit_cluster_dir }}/reproduction/owners/${owner_safe}.yaml" ]; then
+        kubectl get "$resource" "$name" -n "$namespace" -o yaml \
+          > "{{ trace_kit_cluster_dir }}/reproduction/owners/${owner_safe}.yaml" 2>&1 || true
+
+        if [ "$kind" = "ReplicaSet" ]; then
+          parents=$(kubectl get replicaset "$name" -n "$namespace" \
+            -o jsonpath='{range .metadata.ownerReferences[*]}{.kind}:{.name}{"\n"}{end}' || true)
+          for parent in $parents; do
+            pkind="${parent%%:*}"
+            pname="${parent##*:}"
+            if [ -z "$pkind" ] || [ -z "$pname" ]; then
+              continue
+            fi
+
+            presource=$(echo "$pkind" | tr '[:upper:]' '[:lower:]')
+            parent_safe=$(printf '%s-%s-%s' "$namespace" "$pkind" "$pname" | sed 's/[^A-Za-z0-9_.-]/_/g')
+            if [ ! -f "{{ trace_kit_cluster_dir }}/reproduction/owners/${parent_safe}.yaml" ]; then
+              kubectl get "$presource" "$pname" -n "$namespace" -o yaml \
+                > "{{ trace_kit_cluster_dir }}/reproduction/owners/${parent_safe}.yaml" 2>&1 || true
+            fi
+          done
+        fi
+      fi
+    done
+  args:
+    executable: /bin/bash
+  loop: "{{ trace_kit_non_running_pod_objects | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.namespace }}/{{ item.metadata.name }}"
+  when: trace_kit_non_running_pod_objects | default([]) | length > 0
+  changed_when: true
+
+- name: Gather diagnostic pods for selectors
+  ansible.builtin.shell: |
+    set -o pipefail
+    kubectl get pods -n {{ item.namespace }} -l "{{ item.selector }}" \
+      -o jsonpath='{range .items[*]}{.metadata.namespace} {.metadata.name}{"\n"}{end}'
+  args:
+    executable: /bin/bash
+  register: trace_kit_selector_pods
+  loop: "{{ trace_kit_log_selectors }}"
+  loop_control:
+    label: "{{ item.name }}"
+  failed_when: false
+  changed_when: false
+
+- name: Reset selector pod mappings
+  ansible.builtin.set_fact:
+    trace_kit_selector_results: []
+  changed_when: false
+
+- name: Build selector pod mappings
+  ansible.builtin.set_fact:
+    trace_kit_selector_results: >-
+      {{
+        (trace_kit_selector_results | default([]))
+        + [
+            {
+              'definition': item.item,
+              'pods': item.stdout_lines | default([])
+            }
+          ]
+      }}
+  loop: "{{ trace_kit_selector_pods.results }}"
+  changed_when: false
+
+- name: Capture logs for selector matched pods
+  ansible.builtin.shell: |
+    set -o pipefail
+    namespace=$(echo "{{ item.1 }}" | awk '{print $1}')
+    pod_name=$(echo "{{ item.1 }}" | awk '{print $2}')
+    if [ -n "$pod_name" ]; then
+      safe_name=$(printf '%s-%s-%s' "{{ item.0.definition.name }}" "$namespace" "$pod_name" | sed 's/[^A-Za-z0-9_.-]/_/g')
+      kubectl logs "$pod_name" -n "$namespace" --all-containers --tail={{ trace_kit_pod_log_tail_lines }} \
+        > "{{ trace_kit_cluster_dir }}/logs/${safe_name}.log" 2>&1 || true
+    fi
+  args:
+    executable: /bin/bash
+  loop: "{{ (trace_kit_selector_results | default([])) | subelements('pods') }}"
+  loop_control:
+    label: "{{ item.0.definition.name }}: {{ item.1 }}"
+  when: (trace_kit_selector_results | default([])) | length > 0
+  changed_when: true
+
+- name: Execute controlled restarts when requested
+  ansible.builtin.shell: |
+    set -o pipefail
+    safe_name=$(printf '%s-%s' "{{ item.namespace }}" "{{ item.resource }}" | sed 's/[^A-Za-z0-9_.-]/_/g')
+    kubectl rollout restart {{ item.resource }} -n {{ item.namespace }} \
+      > "{{ trace_kit_cluster_dir }}/restarts/${safe_name}.txt" 2>&1
+  args:
+    executable: /bin/bash
+  loop: "{{ trace_kit_restart_resources }}"
+  loop_control:
+    label: "{{ item.namespace }}/{{ item.resource }}"
+  when: trace_kit_enable_restarts | bool and (trace_kit_restart_resources | length > 0)
+  changed_when: true
+
+- name: Package cluster diagnostics
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    argv:
+      - tar
+      - -czf
+      - "{{ trace_kit_cluster_dir }}.tar.gz"
+      - -C
+      - "{{ trace_kit_cluster_dir | dirname }}"
+      - "{{ trace_kit_cluster_dir | basename }}"
+  args:
+    warn: false
+  changed_when: true
+
+- name: Set permissions on cluster diagnostics archive
+  ansible.builtin.file:
+    path: "{{ trace_kit_cluster_dir }}.tar.gz"
+    mode: "0640"
+
+- name: Register cluster diagnostics tarball path
+  ansible.builtin.set_fact:
+    trace_kit_cluster_tarball: "{{ trace_kit_cluster_dir }}.tar.gz"

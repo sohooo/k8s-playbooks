@@ -1,0 +1,134 @@
+- name: Determine trace kit run identifier
+  ansible.builtin.set_fact:
+    trace_kit_run_id: "{{ lookup('ansible.builtin.pipe', 'date +%Y%m%d%H%M%S') }}"
+  run_once: true
+
+- name: Share trace kit run identifier with all hosts
+  ansible.builtin.set_fact:
+    trace_kit_run_id: "{{ hostvars[ansible_play_hosts_all[0]].trace_kit_run_id }}"
+  when: trace_kit_run_id is not defined
+
+- name: Resolve kubectl delegate host
+  ansible.builtin.set_fact:
+    trace_kit_kubectl_delegate_resolved: >-
+      {{
+        trace_kit_kubectl_delegate | default(
+          (groups['kube_control_plane'] | default([])) | first | default(ansible_play_hosts_all[0])
+        )
+      }}
+  run_once: true
+
+- name: Record resolved kubectl delegate
+  ansible.builtin.set_fact:
+    trace_kit_kubectl_delegate_resolved: "{{ hostvars[ansible_play_hosts_all[0]].trace_kit_kubectl_delegate_resolved }}"
+  when: trace_kit_kubectl_delegate_resolved is not defined
+
+- name: Prepare per-node diagnostics directory
+  ansible.builtin.set_fact:
+    trace_kit_node_dir: >-
+      {{ trace_kit_remote_parent_dir }}/{{ trace_kit_run_id }}/nodes/{{ inventory_hostname }}
+
+- name: Create node diagnostics directories
+  ansible.builtin.file:
+    path: "{{ trace_kit_node_dir }}/{{ item }}"
+    state: directory
+    mode: "0750"
+  loop:
+    - network
+    - system
+
+- name: Include network collection tasks
+  ansible.builtin.include_tasks: network.yml
+
+- name: Include cluster-level diagnostics tasks
+  ansible.builtin.include_tasks:
+    file: cluster.yml
+    apply:
+      delegate_to: "{{ trace_kit_kubectl_delegate_resolved }}"
+      run_once: true
+
+- name: Share cluster diagnostics tarball location
+  ansible.builtin.set_fact:
+    trace_kit_cluster_tarball_path: "{{ hostvars[trace_kit_kubectl_delegate_resolved].trace_kit_cluster_tarball }}"
+  run_once: true
+
+- name: Package per-node diagnostics locally on each host
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    argv:
+      - tar
+      - -czf
+      - "{{ trace_kit_node_dir }}.tar.gz"
+      - -C
+      - "{{ trace_kit_node_dir | dirname }}"
+      - "{{ trace_kit_node_dir | basename }}"
+  args:
+    warn: false
+  changed_when: true
+
+- name: Set permissions on packaged node diagnostics archive
+  ansible.builtin.file:
+    path: "{{ trace_kit_node_dir }}.tar.gz"
+    mode: "0640"
+
+- name: Prepare local staging directory
+  ansible.builtin.file:
+    path: "{{ trace_kit_local_parent_dir }}/{{ trace_kit_run_id }}/packages"
+    state: directory
+    mode: "0750"
+  delegate_to: localhost
+  run_once: true
+
+- name: Retrieve packaged node diagnostics
+  ansible.builtin.fetch:
+    src: "{{ trace_kit_node_dir }}.tar.gz"
+    dest: "{{ trace_kit_local_parent_dir }}/{{ trace_kit_run_id }}/packages/{{ inventory_hostname }}.tar.gz"
+    flat: true
+
+- name: Retrieve packaged cluster diagnostics
+  ansible.builtin.fetch:
+    src: "{{ trace_kit_cluster_tarball_path }}"
+    dest: "{{ trace_kit_local_parent_dir }}/{{ trace_kit_run_id }}/packages/cluster.tar.gz"
+    flat: true
+  run_once: true
+  delegate_to: "{{ trace_kit_kubectl_delegate_resolved }}"
+
+- name: Unpack node diagnostics on control host
+  ansible.builtin.unarchive:
+    src: "{{ trace_kit_local_parent_dir }}/{{ trace_kit_run_id }}/packages/{{ item }}.tar.gz"
+    dest: "{{ trace_kit_local_parent_dir }}/{{ trace_kit_run_id }}"
+    remote_src: true
+  delegate_to: localhost
+  loop: "{{ ansible_play_hosts_all }}"
+  loop_control:
+    label: "{{ item }}"
+  run_once: true
+
+- name: Unpack cluster diagnostics on control host
+  ansible.builtin.unarchive:
+    src: "{{ trace_kit_local_parent_dir }}/{{ trace_kit_run_id }}/packages/cluster.tar.gz"
+    dest: "{{ trace_kit_local_parent_dir }}/{{ trace_kit_run_id }}"
+    remote_src: true
+  delegate_to: localhost
+  run_once: true
+
+- name: Create final trace kit tarball
+  ansible.builtin.command:  # noqa: command-instead-of-module
+    argv:
+      - tar
+      - -czf
+      - "{{ trace_kit_local_parent_dir }}/trace-kit-{{ trace_kit_run_id }}.tar.gz"
+      - -C
+      - "{{ trace_kit_local_parent_dir }}/{{ trace_kit_run_id }}"
+      - .
+  args:
+    warn: false
+  changed_when: true
+  delegate_to: localhost
+  run_once: true
+
+- name: Set permissions on final trace kit tarball
+  ansible.builtin.file:
+    path: "{{ trace_kit_local_parent_dir }}/trace-kit-{{ trace_kit_run_id }}.tar.gz"
+    mode: "0640"
+  delegate_to: localhost
+  run_once: true
