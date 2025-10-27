@@ -16,6 +16,7 @@
     - reproduction
     - cilium
     - envoy-gateway
+    - longhorn
 
 - name: Create reproduction data directories
   ansible.builtin.file:
@@ -43,6 +44,18 @@
   loop:
     - routes
 
+- name: Create Longhorn diagnostics directories
+  ansible.builtin.file:
+    path: "{{ trace_kit_cluster_dir }}/longhorn/{{ item }}"
+    state: directory
+    mode: "0750"
+  loop:
+    - status
+    - resources
+    - traces
+    - debug
+  when: trace_kit_capture_longhorn | bool
+
 - name: Capture cluster node overview
   ansible.builtin.shell: |
     set -o pipefail
@@ -67,6 +80,264 @@
     kubectl get events -A --sort-by=.lastTimestamp > "{{ trace_kit_cluster_dir }}/events.txt" 2>&1
   args:
     executable: /bin/bash
+  changed_when: true
+  failed_when: false
+
+- name: Capture Longhorn status summaries
+  ansible.builtin.shell: |
+    set -o pipefail
+    {
+      echo "# {{ item.command }}"
+      {{ item.command }}
+    } > "{{ trace_kit_cluster_dir }}/longhorn/status/{{ item.name | regex_replace('[^A-Za-z0-9_.-]', '_') }}.txt" 2>&1 || true
+  args:
+    executable: /bin/bash
+  loop: "{{ trace_kit_longhorn_status_commands }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: trace_kit_capture_longhorn | bool
+  changed_when: true
+  failed_when: false
+
+- name: Capture Longhorn resource manifests
+  ansible.builtin.shell: |
+    set -o pipefail
+    {
+      echo "# kubectl -n {{ trace_kit_longhorn_namespace }} get {{ item }} -o yaml"
+      kubectl -n {{ trace_kit_longhorn_namespace }} get {{ item }} -o yaml
+    } > "{{ trace_kit_cluster_dir }}/longhorn/resources/{{ item | regex_replace('[^A-Za-z0-9_.-]', '_') }}.yaml" 2>&1 || true
+  args:
+    executable: /bin/bash
+  loop: "{{ trace_kit_longhorn_resource_types }}"
+  loop_control:
+    label: "{{ item }}"
+  when: trace_kit_capture_longhorn | bool
+  changed_when: true
+  failed_when: false
+
+- name: Capture Longhorn namespace events
+  ansible.builtin.shell: |
+    set -o pipefail
+    kubectl -n {{ trace_kit_longhorn_namespace }} get events --sort-by=.lastTimestamp \
+      > "{{ trace_kit_cluster_dir }}/longhorn/debug/events.txt" 2>&1 || true
+  args:
+    executable: /bin/bash
+  when: trace_kit_capture_longhorn | bool
+  changed_when: true
+  failed_when: false
+
+- name: Gather Longhorn pod names
+  ansible.builtin.shell: |
+    set -o pipefail
+    kubectl -n {{ trace_kit_longhorn_namespace }} get pods \
+      -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}'
+  args:
+    executable: /bin/bash
+  register: trace_kit_longhorn_pod_inventory
+  when: trace_kit_capture_longhorn | bool
+  changed_when: false
+  failed_when: false
+
+- name: Describe Longhorn pods
+  ansible.builtin.shell: |
+    set -o pipefail
+    {
+      echo "# kubectl -n {{ trace_kit_longhorn_namespace }} describe pod {{ item }}"
+      kubectl -n {{ trace_kit_longhorn_namespace }} describe pod {{ item }}
+    } > "{{ trace_kit_cluster_dir }}/longhorn/debug/pod-{{ item | regex_replace('[^A-Za-z0-9_.-]', '_') }}.describe" 2>&1 || true
+  args:
+    executable: /bin/bash
+  loop: "{{ trace_kit_longhorn_pod_inventory.stdout_lines | default([]) }}"
+  loop_control:
+    label: "{{ item }}"
+  when:
+    - trace_kit_capture_longhorn | bool
+    - (trace_kit_longhorn_pod_inventory.stdout_lines | default([])) | length > 0
+  changed_when: true
+  failed_when: false
+
+- name: Discover Longhorn pods for log capture
+  ansible.builtin.shell: |
+    set -o pipefail
+    kubectl -n {{ trace_kit_longhorn_namespace }} get pods -l {{ item.selector }} \
+      -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}'
+  args:
+    executable: /bin/bash
+  register: trace_kit_longhorn_trace_pods
+  loop: "{{ trace_kit_longhorn_trace_components }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: trace_kit_capture_longhorn | bool
+  changed_when: false
+  failed_when: false
+
+- name: Ensure Longhorn component trace directories exist
+  ansible.builtin.file:
+    path: "{{ trace_kit_cluster_dir }}/longhorn/traces/{{ item.name | regex_replace('[^A-Za-z0-9_.-]', '_') }}"
+    state: directory
+    mode: "0750"
+  loop: "{{ trace_kit_longhorn_trace_components }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: trace_kit_capture_longhorn | bool
+
+- name: Reset Longhorn component log targets
+  ansible.builtin.set_fact:
+    trace_kit_longhorn_log_targets: []
+  when: trace_kit_capture_longhorn | bool
+
+- name: Build Longhorn component log targets
+  ansible.builtin.set_fact:
+    trace_kit_longhorn_log_targets: >-
+      {{
+        (trace_kit_longhorn_log_targets | default([]))
+        + [
+            {
+              'component': item.0.item.name,
+              'selector': item.0.item.selector,
+              'pod': item.1
+            }
+          ]
+      }}
+  loop: >-
+    {{
+      query(
+        'subelements',
+        trace_kit_longhorn_trace_pods.results | default([]),
+        'stdout_lines',
+        {'skip_missing': True}
+      )
+    }}
+  loop_control:
+    label: "{{ item.0.item.name }}:{{ item.1 }}"
+  when: trace_kit_capture_longhorn | bool
+
+- name: Note Longhorn components without pods
+  ansible.builtin.copy:
+    dest: "{{ trace_kit_cluster_dir }}/longhorn/traces/{{ item.item.name | regex_replace('[^A-Za-z0-9_.-]', '_') }}/_info.txt"
+    content: "No pods matched selector {{ item.item.selector }}\n"
+    mode: "0640"
+  loop: "{{ trace_kit_longhorn_trace_pods.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when:
+    - trace_kit_capture_longhorn | bool
+    - (item.stdout_lines | default([])) | length == 0
+
+- name: Capture Longhorn component logs
+  ansible.builtin.shell: |
+    set -o pipefail
+    component_safe="{{ item.component | regex_replace('[^A-Za-z0-9_.-]', '_') }}"
+    pod_safe="{{ item.pod | regex_replace('[^A-Za-z0-9_.-]', '_') }}"
+    output_file="{{ trace_kit_cluster_dir }}/longhorn/traces/${component_safe}/${pod_safe}.log"
+    {
+      echo "# kubectl -n {{ trace_kit_longhorn_namespace }} logs {{ item.pod }} --all-containers --tail {{ trace_kit_longhorn_log_tail_lines }}"
+      kubectl -n {{ trace_kit_longhorn_namespace }} logs {{ item.pod }} \
+        --all-containers \
+        --tail {{ trace_kit_longhorn_log_tail_lines }} || true
+    } > "$output_file" 2>&1
+  args:
+    executable: /bin/bash
+  loop: "{{ trace_kit_longhorn_log_targets | default([]) }}"
+  loop_control:
+    label: "{{ item.component }}:{{ item.pod }}"
+  when:
+    - trace_kit_capture_longhorn | bool
+    - (trace_kit_longhorn_log_targets | default([])) | length > 0
+  changed_when: true
+  failed_when: false
+
+- name: Identify problematic PersistentVolumes
+  ansible.builtin.shell: |
+    set -o pipefail
+    output_file="{{ trace_kit_cluster_dir }}/longhorn/status/problematic-pvs.txt"
+    tmp_json="$(mktemp)"
+    tmp_err="$(mktemp)"
+    if kubectl get pv -o json >"$tmp_json" 2>"$tmp_err"; then
+      python3 - "$tmp_json" >"$output_file" -c 'import json, sys
+        phases = set({{ trace_kit_longhorn_problematic_pv_phases | to_json }})
+        path = sys.argv[1]
+        with open(path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+
+        matches = []
+        for item in data.get("items", []):
+            meta = item.get("metadata", {})
+            status = item.get("status", {})
+            name = meta.get("name")
+            phase = status.get("phase", "Unknown")
+            deleting = meta.get("deletionTimestamp")
+            if name and (phase in phases or deleting):
+                matches.append((name, phase, bool(deleting)))
+
+        if not matches:
+            print("# No PersistentVolumes matched the problematic phases or were terminating.")
+        else:
+            print("# name\tphase\tterminating")
+            for name, phase, deleting in matches:
+                print(f"{name}\t{phase}\t{str(deleting).lower()}")'
+    else
+      {
+        echo "# kubectl get pv -o json"
+        cat "$tmp_err"
+      } >"$output_file"
+    fi
+    cat "$output_file"
+    rm -f "$tmp_json" "$tmp_err"
+  args:
+    executable: /bin/bash
+  register: trace_kit_longhorn_problematic_pvs
+  when: trace_kit_capture_longhorn | bool
+  changed_when: false
+  failed_when: false
+
+- name: Record problematic PersistentVolume names
+  ansible.builtin.set_fact:
+    trace_kit_longhorn_problematic_pv_names: >-
+      {{
+        (trace_kit_longhorn_problematic_pv_names | default([]))
+        + [item.split('\t')[0]]
+      }}
+  loop: "{{ trace_kit_longhorn_problematic_pvs.stdout_lines | default([]) }}"
+  when:
+    - trace_kit_capture_longhorn | bool
+    - item is string
+    - item | length > 0
+    - not item.startswith('#')
+
+- name: Capture manifests for problematic PersistentVolumes
+  ansible.builtin.shell: |
+    set -o pipefail
+    {
+      echo "# kubectl get pv {{ item }} -o yaml"
+      kubectl get pv {{ item }} -o yaml
+    } > "{{ trace_kit_cluster_dir }}/longhorn/resources/pv-{{ item | regex_replace('[^A-Za-z0-9_.-]', '_') }}.yaml" 2>&1 || true
+  args:
+    executable: /bin/bash
+  loop: "{{ trace_kit_longhorn_problematic_pv_names | default([]) }}"
+  loop_control:
+    label: "{{ item }}"
+  when:
+    - trace_kit_capture_longhorn | bool
+    - (trace_kit_longhorn_problematic_pv_names | default([])) | length > 0
+  changed_when: true
+  failed_when: false
+
+- name: Describe problematic PersistentVolumes
+  ansible.builtin.shell: |
+    set -o pipefail
+    {
+      echo "# kubectl describe pv {{ item }}"
+      kubectl describe pv {{ item }}
+    } > "{{ trace_kit_cluster_dir }}/longhorn/debug/pv-{{ item | regex_replace('[^A-Za-z0-9_.-]', '_') }}.describe" 2>&1 || true
+  args:
+    executable: /bin/bash
+  loop: "{{ trace_kit_longhorn_problematic_pv_names | default([]) }}"
+  loop_control:
+    label: "{{ item }}"
+  when:
+    - trace_kit_capture_longhorn | bool
+    - (trace_kit_longhorn_problematic_pv_names | default([])) | length > 0
   changed_when: true
   failed_when: false
 

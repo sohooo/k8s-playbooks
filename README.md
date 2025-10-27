@@ -107,6 +107,16 @@ The play creates a timestamped archive under `artifacts/trace-kit/` containing p
 events, pod logs (including CNI, kube-proxy, and CoreDNS), optional workload restarts, and workload manifests for reproducing
 failures in a test environment.
 
+When Longhorn is installed, trace kit gathers detailed diagnostics under `cluster/longhorn/`. It records high-level status
+tables for volumes, replicas, engines, nodes, share managers, and PersistentVolumes, captures the underlying custom resource
+manifests, and stores namespace events alongside `kubectl describe` output for every Longhorn pod. The role also tails pod
+logs grouped by component so you can quickly inspect manager, driver deployer, webhook, or instance manager activity. To help
+surface storage issues, the run highlights PersistentVolumes stuck in problematic phases (`Pending`, `Available`, `Released`,
+or `Failed`) or terminating and preserves both their manifests and `kubectl describe` output for root-cause analysis. Tune
+the behaviour with variables such as `trace_kit_capture_longhorn`, `trace_kit_longhorn_namespace`,
+`trace_kit_longhorn_status_commands`, `trace_kit_longhorn_resource_types`, `trace_kit_longhorn_trace_components`, and
+`trace_kit_longhorn_problematic_pv_phases`.
+
 #### Reproducing failed workloads in a test cluster
 
 1. Extract the generated tarball on your workstation:
