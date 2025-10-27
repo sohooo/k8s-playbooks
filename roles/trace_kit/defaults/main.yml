@@ -11,6 +11,63 @@ trace_kit_traceroute_options: "-n"
 trace_kit_curl_extra_args: "--fail --location --silent --show-error --output /dev/null"
 trace_kit_curl_format: "http_code=%{http_code} total_time=%{time_total} connect_time=%{time_connect}"
 
+# Longhorn diagnostics collection.
+trace_kit_capture_longhorn: true
+trace_kit_longhorn_namespace: longhorn-system
+trace_kit_longhorn_log_tail_lines: 500
+trace_kit_longhorn_status_commands:
+  - name: pods
+    command: "kubectl -n {{ trace_kit_longhorn_namespace }} get pods -o wide"
+  - name: volumes
+    command: "kubectl -n {{ trace_kit_longhorn_namespace }} get volumes.longhorn.io -o wide"
+  - name: nodes
+    command: "kubectl -n {{ trace_kit_longhorn_namespace }} get nodes.longhorn.io -o wide"
+  - name: engines
+    command: "kubectl -n {{ trace_kit_longhorn_namespace }} get engines.longhorn.io -o wide"
+  - name: replicas
+    command: "kubectl -n {{ trace_kit_longhorn_namespace }} get replicas.longhorn.io -o wide"
+  - name: sharemanagers
+    command: "kubectl -n {{ trace_kit_longhorn_namespace }} get sharemanagers.longhorn.io -o wide"
+  - name: persistentvolumes
+    command: "kubectl get pv -o wide"
+trace_kit_longhorn_resource_types:
+  - volumes.longhorn.io
+  - engines.longhorn.io
+  - replicas.longhorn.io
+  - instance-managers.longhorn.io
+  - sharemanagers.longhorn.io
+  - backingimagemanagers.longhorn.io
+  - backingimagedatasources.longhorn.io
+  - nodes.longhorn.io
+  - settings.longhorn.io
+  - recurringjobs.longhorn.io
+trace_kit_longhorn_trace_components:
+  - name: manager
+    selector: "app=longhorn-manager"
+  - name: driver-deployer
+    selector: "app=longhorn-driver-deployer"
+  - name: ui
+    selector: "app=longhorn-ui"
+  - name: conversion-webhook
+    selector: "app=longhorn-conversion-webhook"
+  - name: admission-webhook
+    selector: "app=longhorn-admission-webhook"
+  - name: recovery-backend
+    selector: "app=longhorn-recovery-backend"
+  - name: instance-manager
+    selector: "longhorn.io/component=instance-manager"
+  - name: backing-image-manager
+    selector: "longhorn.io/component=backing-image-manager"
+  - name: share-manager
+    selector: "longhorn.io/component=share-manager"
+  - name: support-bundle-manager
+    selector: "longhorn.io/component=support-bundle-manager"
+trace_kit_longhorn_problematic_pv_phases:
+  - Pending
+  - Available
+  - Released
+  - Failed
+
 # Namespace specific verification.
 trace_kit_flagged_namespaces: []
 
