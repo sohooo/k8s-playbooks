@@ -90,7 +90,9 @@ ansible-playbook -i inventories/hosts.ini playbooks/trace-kit.yml \
   -e @vars/trace-kit.yaml
 ```
 
-Review [TRACE_KIT.md](TRACE_KIT.md) for variable descriptions, captured artefacts, and Longhorn-specific behaviour before running the play in production.
+Copy [`vars/trace-kit.example.yml`](../vars/trace-kit.example.yml) to `vars/trace-kit.yaml` as a starting point and then review
+[TRACE_KIT.md](TRACE_KIT.md) for variable descriptions, captured artefacts, and Longhorn-specific behaviour before running the
+play in production.
 
 ### 5. Keep validation commands handy
 

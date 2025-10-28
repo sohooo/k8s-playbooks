@@ -80,7 +80,9 @@ ansible-playbook -i inventories/hosts.ini playbooks/trace-kit.yml \
   -e @vars/trace-kit.yaml
 ```
 
-Read the [trace kit guide](docs/TRACE_KIT.md) for variable details, storage layout, and Longhorn-specific capture behaviour.
+Start by copying [`vars/trace-kit.example.yml`](vars/trace-kit.example.yml) to `vars/trace-kit.yaml` and tailor the values for
+your cluster. Read the [trace kit guide](docs/TRACE_KIT.md) for variable details, storage layout, and Longhorn-specific capture
+behaviour.
 
 ### Running ad-hoc commands
 
