@@ -12,11 +12,21 @@ ansible-playbook -i inventories/hosts.ini playbooks/trace-kit.yml \
   -e @vars/trace-kit.yaml
 ```
 
+Copy [`vars/trace-kit.example.yml`](../vars/trace-kit.example.yml) into place to start from the role defaults:
+
+```bash
+cp vars/trace-kit.example.yml vars/trace-kit.yaml
+```
+
 Define the targets and optional namespaces or restart lists in the variable file:
 
 - `trace_kit_targets` – the hosts to probe.
 - `trace_kit_flagged_namespaces` – namespaces that need deeper inspection.
 - `trace_kit_restart_resources` – workloads that should be restarted during collection.
+
+The example file also exposes switches for Longhorn captures, Cilium and Envoy Gateway diagnostics, pod log tailing, and the
+default workload selectors used for log collection. Leave sections unchanged to inherit the role defaults or override the
+values that matter for your cluster.
 
 ## What gets captured
 

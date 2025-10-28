@@ -1,0 +1,113 @@
+# Example configuration for the trace kit playbook.
+#
+# Copy this file to `vars/trace-kit.yaml` and adjust values to match the
+# cluster you are targeting. Every variable is initialised with the role's
+# default so you can uncomment or edit only the sections you need.
+---
+# Base directories for storing diagnostics.
+trace_kit_remote_parent_dir: "/var/tmp/trace-kit"
+trace_kit_local_parent_dir: "{{ (playbook_dir | default('.')) ~ '/../artifacts/trace-kit' }}"
+
+# Network diagnostics targets. Provide a list of dictionaries with at least an
+# "address" key and optionally a "name" to describe the endpoint.
+trace_kit_targets: []
+trace_kit_ping_count: 5
+trace_kit_traceroute_options: "-n"
+trace_kit_curl_extra_args: "--fail --location --silent --show-error --output /dev/null"
+trace_kit_curl_format: "http_code=%{http_code} total_time=%{time_total} connect_time=%{time_connect}"
+
+# Longhorn diagnostics collection.
+trace_kit_capture_longhorn: true
+trace_kit_longhorn_namespace: longhorn-system
+trace_kit_longhorn_log_tail_lines: 500
+trace_kit_longhorn_status_commands:
+  - name: pods
+    command: "kubectl -n {{ trace_kit_longhorn_namespace }} get pods -o wide"
+  - name: volumes
+    command: "kubectl -n {{ trace_kit_longhorn_namespace }} get volumes.longhorn.io -o wide"
+  - name: nodes
+    command: "kubectl -n {{ trace_kit_longhorn_namespace }} get nodes.longhorn.io -o wide"
+  - name: engines
+    command: "kubectl -n {{ trace_kit_longhorn_namespace }} get engines.longhorn.io -o wide"
+  - name: replicas
+    command: "kubectl -n {{ trace_kit_longhorn_namespace }} get replicas.longhorn.io -o wide"
+  - name: sharemanagers
+    command: "kubectl -n {{ trace_kit_longhorn_namespace }} get sharemanagers.longhorn.io -o wide"
+  - name: persistentvolumes
+    command: "kubectl get pv -o wide"
+trace_kit_longhorn_resource_types:
+  - volumes.longhorn.io
+  - engines.longhorn.io
+  - replicas.longhorn.io
+  - instance-managers.longhorn.io
+  - sharemanagers.longhorn.io
+  - backingimagemanagers.longhorn.io
+  - backingimagedatasources.longhorn.io
+  - nodes.longhorn.io
+  - settings.longhorn.io
+  - recurringjobs.longhorn.io
+trace_kit_longhorn_trace_components:
+  - name: manager
+    selector: "app=longhorn-manager"
+  - name: driver-deployer
+    selector: "app=longhorn-driver-deployer"
+  - name: ui
+    selector: "app=longhorn-ui"
+  - name: conversion-webhook
+    selector: "app=longhorn-conversion-webhook"
+  - name: admission-webhook
+    selector: "app=longhorn-admission-webhook"
+  - name: recovery-backend
+    selector: "app=longhorn-recovery-backend"
+  - name: instance-manager
+    selector: "longhorn.io/component=instance-manager"
+  - name: backing-image-manager
+    selector: "longhorn.io/component=backing-image-manager"
+  - name: share-manager
+    selector: "longhorn.io/component=share-manager"
+  - name: support-bundle-manager
+    selector: "longhorn.io/component=support-bundle-manager"
+trace_kit_longhorn_problematic_pv_phases:
+  - Pending
+  - Available
+  - Released
+  - Failed
+
+# Namespace specific verification.
+trace_kit_flagged_namespaces: []
+
+# Cilium diagnostics defaults.
+trace_kit_cilium_status_timeout_seconds: 300
+trace_kit_hubble_observe_last: 20
+
+# Envoy Gateway diagnostics defaults.
+trace_kit_envoy_gateway_namespace: envoy-gateway-system
+trace_kit_envoy_gateway_deployment: envoy-gateway
+trace_kit_envoy_gateway_log_tail_lines: 200
+
+# Optional restart behaviour. When enabled the resources listed in
+# trace_kit_restart_resources will be restarted with `kubectl
+# rollout` in a controlled way.
+trace_kit_enable_restarts: false
+trace_kit_restart_resources: []
+
+# Pod log capture defaults.
+trace_kit_pod_log_tail_lines: 500
+
+# Workload selectors used to capture key control plane diagnostics. These can
+# be extended per cluster.
+trace_kit_log_selectors:
+  - name: cni
+    namespace: kube-system
+    selector: "k8s-app in (calico-node,cilium,flannel,aws-node,weave-net,canal,azure-ip-masq-agent,azure-cni-networkmonitor)"
+  - name: kube-proxy
+    namespace: kube-system
+    selector: "k8s-app=kube-proxy"
+  - name: coredns
+    namespace: kube-system
+    selector: "k8s-app in (kube-dns,coredns)"
+
+# Host that should execute kubectl commands. When undefined the role attempts
+# to pick the first host in the kube_control_plane group or falls back to the
+# first host in the play.
+trace_kit_kubectl_delegate: null
