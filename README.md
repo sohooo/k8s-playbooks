@@ -34,25 +34,13 @@ See [`docs/README.md`](docs/README.md) for deep dives into playbook internals, i
 
 ## Get Started
 
-1. **Clone the repository and enter it.**
-   ```bash
-   git clone https://github.com/<org>/k8s-playbooks.git
-   cd k8s-playbooks
-   ```
-2. **Bootstrap the tooling.** Create a Python virtual environment, install Ansible, and activate the environment.
-   ```bash
-   ./scripts/setup-ansible.sh
-   source .venv/bin/activate
-   ```
-   > Set the `VENV_DIR` environment variable before running the script to change the virtual environment location.
-3. **Validate the installation and inventory.**
-   ```bash
-   ansible --version
-   ansible-lint --version
-   ansible-inventory -i inventories/hosts.ini --graph
-   ```
+The checklist below summarises the onboarding workflow. Follow the [Day 1 setup guide](docs/ONBOARDING.md#day-1-setup) for the full commands and optional flags.
 
-Keep the virtual environment activated (`source .venv/bin/activate`) in every new shell so the installed tooling remains available. Ensure the selected kubectl delegate (a control-plane host discovered during the kubectl setup helpers) can reach the Kubernetes API and has `kubectl` available in `/var/lib/rancher/rke2/bin`.
+1. Clone this repository and switch into the project directory.
+2. Run `./scripts/setup-ansible.sh` to provision the Python virtual environment and tooling.
+3. Activate the environment and confirm Ansible, ansible-lint, and the inventory load correctly.
+
+Keep the virtual environment activated (`source .venv/bin/activate`) in every new shell so the installed tooling remains available. The designated kubectl delegate (a control-plane host discovered during the kubectl helpers) must be able to reach the Kubernetes API and expose `kubectl` under `/var/lib/rancher/rke2/bin`.
 
 ## Usage
 
