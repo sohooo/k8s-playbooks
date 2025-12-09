@@ -1,0 +1,108 @@
+---
+# Default controls for the RKE2 CIS 1.11 profile.
+rke2_cis_1_11_profile: "cis-1.11"
+
+rke2_cis_1_11_apply: true
+
+rke2_cis_1_11_config_dir: /etc/rancher/rke2/config.yaml.d
+rke2_cis_1_11_sysctl_conf: /etc/sysctl.d/60-rke2-cis.conf
+rke2_cis_1_11_audit_policy_path: /etc/rancher/rke2/audit-policy.yaml
+
+# Map of sysctl values collected from the CIS 1.11 benchmark guidance.
+rke2_cis_1_11_sysctl_overrides:
+  kernel.panic: 10
+  kernel.panic_on_oops: 1
+  kernel.keys.root_maxbytes: 25000000
+  kernel.keys.root_maxkeys: 1000000
+  net.bridge.bridge-nf-call-iptables: 1
+  net.bridge.bridge-nf-call-ip6tables: 1
+  net.ipv4.ip_forward: 1
+  net.ipv4.conf.all.accept_redirects: 0
+  net.ipv4.conf.all.accept_source_route: 0
+  net.ipv4.conf.all.log_martians: 1
+  net.ipv4.conf.all.rp_filter: 1
+  net.ipv4.conf.default.accept_redirects: 0
+  net.ipv4.conf.default.accept_source_route: 0
+  net.ipv4.conf.default.log_martians: 1
+  net.ipv4.conf.default.rp_filter: 1
+  net.ipv4.tcp_syncookies: 1
+  net.ipv6.conf.all.accept_ra: 0
+  net.ipv6.conf.default.accept_ra: 0
+  vm.overcommit_memory: 1
+  vm.panic_on_oom: 0
+
+# RKE2 configuration tuned for the CIS 1.11 profile.
+rke2_cis_1_11_config:
+  profile: "{{ rke2_cis_1_11_profile }}"
+  protect-kernel-defaults: true
+  write-kubeconfig-mode: "0640"
+  selinux: true
+  audit-policy-file: "{{ rke2_cis_1_11_audit_policy_path }}"
+  kube-apiserver-arg:
+    - audit-log-path=/var/lib/rancher/rke2/server/logs/audit.log
+    - audit-log-maxage=30
+    - audit-log-maxbackup=10
+    - audit-log-maxsize=100
+    - authorization-mode=Node,RBAC
+    - enable-admission-plugins=NamespaceLifecycle,ServiceAccount,NodeRestriction
+    - anonymous-auth=false
+    - profiling=false
+    - service-account-lookup=true
+  kube-controller-manager-arg:
+    - address=127.0.0.1
+    - bind-address=127.0.0.1
+    - terminated-pod-gc-threshold=1000
+    - use-service-account-credentials=true
+  kube-scheduler-arg:
+    - address=127.0.0.1
+    - bind-address=127.0.0.1
+    - profiling=false
+  kubelet-arg:
+    - authorization-mode=Webhook
+    - authentication-token-webhook=true
+    - anonymous-auth=false
+    - streaming-connection-idle-timeout=5m
+    - protect-kernel-defaults=true
+    - make-iptables-util-chains=true
+    - read-only-port=0
+    - rotate-certificates=true
+  kube-proxy-arg:
+    - metrics-bind-address=127.0.0.1:10249
+
+# File permission controls grouped for reporting and remediation.
+rke2_cis_1_11_file_permissions:
+  - path: /etc/rancher/rke2
+    state: directory
+    mode: "0750"
+    owner: root
+    group: root
+  - path: /etc/rancher/rke2/config.yaml
+    state: file
+    mode: "0600"
+    owner: root
+    group: root
+  - path: /etc/rancher/rke2/config.yaml.d
+    state: directory
+    mode: "0750"
+    owner: root
+    group: root
+  - path: /var/lib/rancher/rke2/server/node-token
+    state: file
+    mode: "0600"
+    owner: root
+    group: root
+  - path: /var/lib/rancher/rke2/server/token
+    state: file
+    mode: "0600"
+    owner: root
+    group: root
+  - path: /var/lib/rancher/rke2/server/cred/admin.kubeconfig
+    state: file
+    mode: "0640"
+    owner: root
+    group: root
+  - path: /var/lib/rancher/rke2/agent/kubelet.conf
+    state: file
+    mode: "0640"
+    owner: root
+    group: root

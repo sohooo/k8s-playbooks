@@ -1,0 +1,21 @@
+# Managed by Ansible: minimal audit policy compatible with CIS 1.11
+apiVersion: audit.k8s.io/v1
+kind: Policy
+metadata:
+  name: rke2-cis-1-11
+rules:
+  - level: Metadata
+    resources:
+      - group: ""
+        resources: [pods, pods/log, secrets, configmaps, services]
+      - group: "rbac.authorization.k8s.io"
+        resources: [roles, rolebindings, clusterroles, clusterrolebindings]
+  - level: RequestResponse
+    verbs: [create, update, patch, delete]
+    resources:
+      - group: ""
+        resources: [pods, pods/attach, pods/exec, pods/portforward, secrets]
+  - level: None
+    resources:
+      - group: ""
+        resources: [events]

@@ -1,0 +1,8 @@
+---
+- name: Apply RKE2 CIS 1.11 profile
+  hosts: kube_nodes
+  become: true
+  gather_facts: true
+
+  roles:
+    - role: rke2_cis_1_11
