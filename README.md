@@ -6,6 +6,7 @@ This repository provides Ansible resources for operating Rancher Kubernetes Engi
 - A rolling maintenance playbook that drains, updates, reboots, and uncordons each host one at a time, using inventory ordering to service control-plane nodes before workers.
 - A GPU labelling playbook that detects NVIDIA hardware on each node and applies `gpu=on` or `gpu=off` Kubernetes labels so every node is consistently marked for GPU scheduling frameworks such as [HAMi](https://github.com/Project-HAMi/HAMi).
 - A trace kit playbook that gathers multi-node network traces, cluster diagnostics, and packages the findings for SRE or vendor escalation.
+- A CIS 1.11 hardening playbook that can audit or apply RKE2 security settings in line with the RKE2 CIS Self-Assessment Guide.
 
 See [`docs/README.md`](docs/README.md) for deep dives into playbook internals, inventory conventions, and onboarding material.
 
@@ -19,6 +20,7 @@ See [`docs/README.md`](docs/README.md) for deep dives into playbook internals, i
 ├── playbooks/
 │   ├── label-gpu-nodes.yml   # Apply the gpu=on label to hosts with NVIDIA hardware
 │   ├── maintenance.yml       # Entry point for the maintenance workflow
+│   ├── rke2-cis-hardening.yml # Audit and enforce RKE2 CIS 1.11 controls
 │   ├── trace-kit.yml         # Collect in-depth diagnostics for incident response
 │   └── tasks/
 │       └── common/           # Re-usable task snippets for maintenance actions
@@ -69,6 +71,22 @@ Apply the GPU labels so that every node advertises whether a GPU is available. T
 ```bash
 ansible-playbook -i inventories/hosts.ini playbooks/label-gpu-nodes.yml --limit kube_alpha
 ```
+
+### RKE2 CIS 1.11 hardening
+
+Audit an environment without changing it using Ansible check mode:
+
+```bash
+ansible-playbook -i inventories/hosts.ini playbooks/rke2-cis-hardening.yml --check
+```
+
+Apply the hardening settings to all nodes (control-plane and workers) in a single run:
+
+```bash
+ansible-playbook -i inventories/hosts.ini playbooks/rke2-cis-hardening.yml
+```
+
+See the full guide in [`docs/rke2-cis-1-11.md`](docs/rke2-cis-1-11.md) for variable-level customization and tagging.
 
 ### Trace kit overview
 

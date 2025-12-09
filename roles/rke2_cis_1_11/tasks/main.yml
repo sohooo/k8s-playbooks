@@ -1,0 +1,135 @@
+---
+- name: Verify RKE2 install presence for CIS hardening
+  ansible.builtin.stat:
+    path: /etc/rancher/rke2
+  register: rke2_cis_1_11_rke2_path
+  failed_when: not rke2_cis_1_11_rke2_path.stat.exists
+  tags:
+    - cis
+    - audit
+
+- name: Build hardening directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0750"
+  loop:
+    - "/etc/rancher/rke2"
+    - "{{ rke2_cis_1_11_config_dir }}"
+  when: rke2_cis_1_11_apply | bool
+  tags:
+    - cis
+    - harden
+
+- name: Prepare sysctl drop-in for CIS controls
+  ansible.builtin.template:
+    src: sysctl.conf.j2
+    dest: "{{ rke2_cis_1_11_sysctl_conf }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: rke2_cis_1_11_apply | bool
+  notify:
+    - Reload sysctl
+  tags:
+    - cis
+    - harden
+
+- name: Render audit policy aligned with CIS guidance
+  ansible.builtin.template:
+    src: audit-policy.yaml.j2
+    dest: "{{ rke2_cis_1_11_audit_policy_path }}"
+    owner: root
+    group: root
+    mode: "0640"
+  when: rke2_cis_1_11_apply | bool
+  tags:
+    - cis
+    - harden
+
+- name: Render RKE2 CIS profile configuration
+  ansible.builtin.template:
+    src: cis-config.yaml.j2
+    dest: "{{ rke2_cis_1_11_config_dir }}/90-cis-profile.yaml"
+    owner: root
+    group: root
+    mode: "0640"
+  when: rke2_cis_1_11_apply | bool
+  tags:
+    - cis
+    - harden
+
+- name: Ensure permissions align with CIS expectations
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: "{{ item.state }}"
+    mode: "{{ item.mode }}"
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+  loop: "{{ rke2_cis_1_11_file_permissions }}"
+  when: rke2_cis_1_11_apply | bool
+  tags:
+    - cis
+    - harden
+
+- name: Capture current sysctl values for reporting
+  ansible.builtin.command: sysctl -n {{ item.key }}
+  loop: "{{ rke2_cis_1_11_sysctl_overrides | dict2items }}"
+  register: rke2_cis_1_11_sysctl_checks
+  changed_when: false
+  failed_when: false
+  tags:
+    - cis
+    - audit
+
+- name: Summarize sysctl drift from CIS expectations
+  ansible.builtin.set_fact:
+    rke2_cis_1_11_sysctl_report: >-
+      {{ (rke2_cis_1_11_sysctl_report | default([]))
+         + [{'name': item.item.key,
+             'expected': (item.item.value | string),
+             'observed': item.stdout}] }}
+  loop: "{{ rke2_cis_1_11_sysctl_checks.results }}"
+  when: item.stdout is defined and item.stdout != (item.item.value | string)
+  tags:
+    - cis
+    - audit
+
+- name: Stat CIS-controlled file permissions
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+    follow: true
+  register: rke2_cis_1_11_file_stats
+  loop: "{{ rke2_cis_1_11_file_permissions }}"
+  changed_when: false
+  failed_when: false
+  tags:
+    - cis
+    - audit
+
+- name: Summarize file permission drift
+  ansible.builtin.set_fact:
+    rke2_cis_1_11_file_report: >-
+      {{ (rke2_cis_1_11_file_report | default([]))
+         + [{'path': item.item.path,
+             'expected_mode': item.item.mode,
+             'observed_mode': item.stat.mode if item.stat is defined else 'missing',
+             'expected_owner': item.item.owner,
+             'observed_owner': item.stat.pw_name if item.stat is defined else 'missing',
+             'expected_group': item.item.group,
+             'observed_group': item.stat.gr_name if item.stat is defined else 'missing'}] }}
+  loop: "{{ rke2_cis_1_11_file_stats.results }}"
+  when: item.stat is not defined or item.stat.mode != item.item.mode or item.stat.pw_name != item.item.owner or item.stat.gr_name != item.item.group
+  tags:
+    - cis
+    - audit
+
+- name: Report CIS controls requiring attention
+  ansible.builtin.debug:
+    msg: |
+      RKE2 CIS 1.11 audit completed.
+      Sysctl mismatches ({{ (rke2_cis_1_11_sysctl_report | default([])) | length }}): {{ rke2_cis_1_11_sysctl_report | default([]) }}
+      File permission mismatches ({{ (rke2_cis_1_11_file_report | default([])) | length }}): {{ rke2_cis_1_11_file_report | default([]) }}
+  tags:
+    - cis
+    - audit

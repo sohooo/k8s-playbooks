@@ -1,0 +1,3 @@
+# Managed by Ansible: CIS Kubernetes 1.11 recommendations for RKE2
+{% for key, value in rke2_cis_1_11_sysctl_overrides.items() %}{{ key }} = {{ value }}
+{% endfor %}
