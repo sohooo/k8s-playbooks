@@ -7,6 +7,7 @@ This repository provides Ansible resources for operating Rancher Kubernetes Engi
 - A GPU labelling playbook that detects NVIDIA hardware on each node and applies `gpu=on` or `gpu=off` Kubernetes labels so every node is consistently marked for GPU scheduling frameworks such as [HAMi](https://github.com/Project-HAMi/HAMi).
 - A trace kit playbook that gathers multi-node network traces, cluster diagnostics, and packages the findings for SRE or vendor escalation.
 - A CIS 1.11 hardening playbook that can audit or apply RKE2 security settings in line with the RKE2 CIS Self-Assessment Guide.
+- A DISA STIG configuration playbook that renders the RKE2 server and agent settings published by Rancher Government Solutions.
 
 See [`docs/README.md`](docs/README.md) for deep dives into playbook internals, inventory conventions, and onboarding material.
 
@@ -45,6 +46,22 @@ The checklist below summarises the onboarding workflow. Follow the [Day 1 setup 
 Keep the virtual environment activated (`source .venv/bin/activate`) in every new shell so the installed tooling remains available. The designated kubectl delegate (a control-plane host discovered during the kubectl helpers) must be able to reach the Kubernetes API and expose `kubectl` under `/var/lib/rancher/rke2/bin`.
 
 ## Usage
+
+### Security audits (noop mode)
+
+Run the security playbooks in Ansible check mode to audit nodes without modifying their configuration. Combine `--check` with `--diff` when you want to review the rendered file changes:
+
+```bash
+ansible-playbook -i inventories/hosts.ini playbooks/rke2-cis-hardening.yml --check --diff
+
+ansible-playbook -i inventories/hosts.ini playbooks/rke2-disa-stig.yml \
+  -e rke2_disa_stig_domain=rke2.example.mil \
+  -e rke2_disa_stig_token='<cluster-registration-token>' \
+  -e rke2_disa_stig_registry=registry1.dso.mil \
+  --check --diff
+```
+
+Schedule these commands periodically (for example, via a CI job or cron) to verify clusters remain compliant without making configuration changes.
 
 ### Maintenance workflow
 
@@ -87,6 +104,19 @@ ansible-playbook -i inventories/hosts.ini playbooks/rke2-cis-hardening.yml
 ```
 
 See the full guide in [`docs/rke2-cis-1-11.md`](docs/rke2-cis-1-11.md) for variable-level customization and tagging.
+
+### RKE2 DISA STIG configuration
+
+Apply the RKE2 DISA STIG configuration to control-plane and worker nodes using the published RGS guidance:
+
+```bash
+ansible-playbook -i inventories/hosts.ini playbooks/rke2-disa-stig.yml \
+  -e rke2_disa_stig_domain=rke2.example.mil \
+  -e rke2_disa_stig_token='<cluster-registration-token>' \
+  -e rke2_disa_stig_registry=registry1.dso.mil
+```
+
+The variables above must be provided to render the secure control-plane and agent configuration files on the appropriate hosts. The play automatically skips agent-specific tasks on control-plane hosts and vice versa.
 
 ### Trace kit overview
 

@@ -1,0 +1,63 @@
+---
+# Default inputs for enforcing the DISA STIG-aligned RKE2 configuration.
+rke2_disa_stig_domain: ""
+rke2_disa_stig_token: ""
+rke2_disa_stig_registry: ""
+
+rke2_disa_stig_control_plane_dirs:
+  - /opt/rke2-artifacts
+  - /etc/rancher/rke2
+  - /var/lib/rancher/rke2/server/manifests
+
+rke2_disa_stig_audit_policy_path: /etc/rancher/rke2/audit-policy.yaml
+rke2_disa_stig_pss_config_path: /etc/rancher/rke2/rancher-pss.yaml
+rke2_disa_stig_config_path: /etc/rancher/rke2/config.yaml
+
+rke2_disa_stig_control_plane_config:
+  profile: cis
+  selinux: true
+  secrets-encryption: true
+  write-kubeconfig-mode: "0600"
+  embedded-registry: true
+  use-service-account-credentials: true
+  kube-controller-manager-arg:
+    - bind-address=127.0.0.1
+    - use-service-account-credentials=true
+    - tls-min-version=VersionTLS12
+    - tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+  kube-scheduler-arg:
+    - tls-min-version=VersionTLS12
+    - tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+  kube-apiserver-arg:
+    - tls-min-version=VersionTLS12
+    - tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+    - authorization-mode=RBAC,Node
+    - anonymous-auth=false
+    - admission-control-config-file={{ rke2_disa_stig_pss_config_path }}
+    - audit-policy-file={{ rke2_disa_stig_audit_policy_path }}
+    - audit-log-mode=blocking-strict
+    - audit-log-maxage=30
+  kubelet-arg:
+    - protect-kernel-defaults=true
+    - read-only-port=0
+    - authorization-mode=Webhook
+    - streaming-connection-idle-timeout=5m
+  server: https://{{ rke2_disa_stig_domain }}:9345
+  token: "{{ rke2_disa_stig_token }}"
+  tls-san:
+    - "{{ rke2_disa_stig_domain }}"
+  system-default-registry: "{{ rke2_disa_stig_registry }}"
+
+rke2_disa_stig_worker_config:
+  profile: cis
+  selinux: true
+  write-kubeconfig-mode: "0600"
+  kube-apiserver-arg:
+    - authorization-mode=RBAC,Node
+  kubelet-arg:
+    - protect-kernel-defaults=true
+    - read-only-port=0
+    - authorization-mode=Webhook
+  server: https://{{ rke2_disa_stig_domain }}:9345
+  token: "{{ rke2_disa_stig_token }}"
+  system-default-registry: "{{ rke2_disa_stig_registry }}"
